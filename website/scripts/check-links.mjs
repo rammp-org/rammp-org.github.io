@@ -1,5 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -38,7 +38,9 @@ function resolves(outDir, pageFile, href) {
     target = path.join(pageDir, clean)
   }
 
-  return existsSync(`${target}.html`) || existsSync(path.join(target, 'index.html'))
+  return (existsSync(target) && !statSync(target).isDirectory()) ||
+    existsSync(`${target}.html`) ||
+    existsSync(path.join(target, 'index.html'))
 }
 
 export async function brokenLinks(outDir) {

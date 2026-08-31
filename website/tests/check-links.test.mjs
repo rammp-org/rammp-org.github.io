@@ -67,6 +67,14 @@ test('brokenLinks reports a link resolving to a directory with no index.html', a
   assert.equal(broken[0].href, './guides')
 })
 
+test('brokenLinks accepts a link to a real file that is not a page', async () => {
+  const out = await mkdtemp(path.join(tmpdir(), 'links-'))
+  await mkdir(path.join(out, '_next', 'static'), { recursive: true })
+  await writeFile(path.join(out, '_next', 'static', 'app.css'), 'body{}')
+  await writeFile(path.join(out, 'index.html'), '<a href="/_next/static/app.css">css</a>')
+  assert.deepEqual(await brokenLinks(out), [])
+})
+
 test('staleLinks reports any href back to the site as an absolute URL', async () => {
   const out = await mkdtemp(path.join(tmpdir(), 'links-'))
   await writeFile(path.join(out, 'index.html'),
