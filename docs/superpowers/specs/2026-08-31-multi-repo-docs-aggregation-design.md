@@ -25,31 +25,42 @@ links out.
 - One published tree that spans every RAMMP repo, with a single sidebar and a
   single search index.
 - The site scaffold exists in exactly one place.
-- A repo with an audience of its own — sheppy today, others later — can still
-  publish a standalone site, without a second scaffold to maintain.
 - A doc author writes markdown in their own repo and nothing else, and can
   preview it locally.
+- Nothing forecloses giving a repo its own standalone site later.
 
 ## Non-goals
 
 - Versioned documentation or a version switcher.
 - Publishing docs from anything other than the `main` branch.
 - Migrating away from Nextra, or changing how any existing page is authored.
+- Standalone per-repo sites in this iteration. See Deferred.
 
 ## Decisions
 
 **Audience.** sheppy is designed for use beyond RAMMP, and RAMMP itself is meant
-for the broader community; other repos are internal. So the design must produce
-more than one front door. The goal is not "one site instead of many" — it is one
-set of machinery producing several renders.
+for the broader community; other repos are internal. The architecture must
+therefore keep a standalone render cheap to add, even though it does not build
+one yet.
 
-**URLs.** A custom domain, which the hub serves at its root. Necessary rather
-than cosmetic: on `*.github.io`, a project Pages site at `/sheppy` takes
-precedence over an org site's `/sheppy` path, so the hub could never own that
-subtree while sheppy also deploys Pages. On a domain we control, routing is ours.
+**URLs.** `rammp-docs` is renamed to `rammp-org.github.io`, making it the org
+Pages site. The hub then serves from the org root: `rammp-org.github.io/` for
+its landing page, `rammp-org.github.io/sheppy` for sheppy's docs. `basePath` is
+empty in every build.
 
-The domain name itself is chosen at migration step 3; `<domain>` stands for it
-throughout this document.
+The rename is what makes the parent actually parental. It also preserves
+`rammp-org.github.io/sheppy` as a working URL — the hub answers it instead of
+sheppy's own Pages — so no inbound link breaks. The current
+`/rammp-docs` URL does disappear, which is free: the site is days old and
+nothing links to it.
+
+**One owner per path.** A project Pages site takes precedence over the org
+site's same-named path, so sheppy cannot both deploy its own Pages and have the
+hub own `/sheppy`. Sheppy therefore disables its Pages deploy. This is the
+concession the root hub costs, and it is a cheap one right now: a "standalone"
+sheppy hosted at the RAMMP org's own `github.io` does not read as an independent
+tool anyway. Sheppy's independent identity wants its own domain, so the
+standalone render is worth building when there is a domain to put it on.
 
 **Freshness.** Child docs track `main`. Docs stay current with code and a typo
 fix publishes in minutes. The accepted risk is that docs may describe unreleased
@@ -64,8 +75,8 @@ search nor a unified sidebar, and keeps the duplicated scaffolds.
 
 This couples publishing: a child's doc change requires a hub rebuild. That is
 acceptable because the coupling is in publishing, not in content. Content stays
-in each source repo, so decoupling later means pointing a repo's workflow at its
-own build — cheap, and already the mechanism used for standalone sites.
+in each source repo, so decoupling later means giving that repo a workflow that
+builds the shared scaffold against its own `docs/`.
 
 ## Architecture
 
@@ -74,11 +85,11 @@ own build — cheap, and already the mechanism used for standalone sites.
 **Source repos** (`sheppy`, `dojo`, `rammp-deployments`,
 `rammp-module-template`, future module repos) own a `docs/` directory: MDX files
 plus a `_meta.js` describing their own ordering. They carry no docs-site
-scaffold of their own: no Nextra app, no site `package.json`, no
-`node_modules`, no Pages workflow — except where a repo opts into a standalone
-site, which costs it an eight-line workflow.
+scaffold: no Nextra app, no site `package.json`, no `node_modules`, no Pages
+workflow.
 
-**rammp-docs** owns everything else.
+**The hub** (`rammp-org.github.io`, renamed from `rammp-docs`) owns everything
+else.
 
 ```
 sources.yml                    # which repos mount where
@@ -90,8 +101,7 @@ website/
   next.config.mjs
   package.json
 .github/workflows/
-  docs.yml                     # hub build + deploy
-  child-site.yml               # workflow_call: standalone site for one repo
+  docs.yml                     # build + deploy
 ```
 
 ### sources.yml
@@ -103,16 +113,24 @@ The whole configuration of the tree:
   slug: sheppy
   ref: main
   title: sheppy
+  assets: [install.sh]        # copied verbatim into out/sheppy/
 - repo: rammp-org/dojo
   slug: dojo
   ref: main
   title: Dojo
 ```
 
+`assets` lists files outside `docs/` that the source repo's site was serving
+and must keep serving. This is not incidental: sheppy's published install
+command is `curl -LsSf https://rammp-org.github.io/sheppy/install.sh | sh`, and
+that file reaches the web today through a postbuild `cp` in sheppy's own site.
+Once the hub owns `/sheppy`, the hub must place it at the identical path or the
+install command breaks for anyone who has it saved.
+
 Adding a repo to the tree is one entry here plus one entry in the hub's
 `website/content/_meta.js`.
 
-rammp-docs never appears in `sources.yml`. Its own `docs/` holds specs like this
+The hub never appears in `sources.yml`. Its own `docs/` holds specs like this
 one, not site content; the hub's pages live in `website/content/`.
 
 ### compose.mjs
@@ -126,14 +144,17 @@ before writing so removed pages do not linger.
 **Local mode.** If a sibling checkout exists — `../sheppy/docs`, which is how
 `~/atdev` is already laid out — symlink it instead of cloning. This preserves
 local preview for doc authors, who otherwise lose it when their repo sheds its
-scaffold: edit `~/atdev/sheppy/docs/install.mdx`, and the rammp-docs dev server
-shows it at `/sheppy/install`. One dev server covers the whole tree.
+scaffold: edit `~/atdev/sheppy/docs/install.mdx`, and the hub's dev server shows
+it at `/sheppy/install`. One dev server covers the whole tree.
+
+**Assets.** Each source's `assets` entries are copied from the repo root into
+`website/public/<slug>/`, so they land at `out/<slug>/<name>` beside its docs.
 
 **Frontmatter injection.** Each copied file gets an `editUrl` frontmatter field
 pointing at its source repo's edit page, e.g.
 `https://github.com/rammp-org/sheppy/edit/main/docs/install.mdx`. The layout
 renders "Edit this page" from that field, so a sheppy page sends the reader to
-the sheppy repo rather than to rammp-docs. Nextra's global `docsRepositoryBase`
+the sheppy repo rather than to the hub. Nextra's global `docsRepositoryBase`
 cannot express this, since it is set once for the whole site.
 
 **Validation.** compose fails the build when:
@@ -141,45 +162,34 @@ cannot express this, since it is set once for the whole site.
 - a slug in `sources.yml` has no entry in the hub's `website/content/_meta.js`
   (it would render, but be unreachable from the sidebar);
 - a source repo has no `docs/` directory at its ref;
-- any copied file contains a root-absolute internal link (see below).
+- a copied file links to a source repo's old standalone site with an absolute
+  URL (`https://rammp-org.github.io/sheppy/some-page`) instead of a path within
+  the tree. The hub's `content/index.mdx` currently has one such link to sheppy.
+  URLs under a declared `assets` path are exempt, since those must stay absolute
+  and keep resolving.
 
 ### Link conventions
 
-One body of content renders in two places, so links must resolve in both.
+Everything renders in one build from one root, so:
 
-- **Within a repo: relative.** `./config` resolves to `/sheppy/config` in the
-  hub and `/config` on sheppy's standalone site.
-- **Across repos: canonical absolute.** `https://<domain>/platform`. A remark
-  plugin rewrites these to relative paths during the hub build so they do not
-  leave the site; on a standalone build they stay absolute and point home.
+- **Within a repo: relative.** `./config` in a sheppy page resolves to
+  `/sheppy/config`. A root-absolute `/config` would wrongly point at the hub's
+  own page of that name.
+- **Across repos: root-absolute.** `/platform` from a sheppy page, `/sheppy/install`
+  from a hub page.
 
-Root-absolute internal links (`/install`) are rejected by compose. They are the
-form that silently breaks when content is mounted under a slug.
-
-### Standalone child sites
-
-`rammp-docs/.github/workflows/child-site.yml` is a `workflow_call` workflow
-taking the calling repo's slug, title, and domain. It checks out rammp-docs for
-the scaffold and the calling repo for its `docs/`, builds, and deploys to the
-caller's own Pages.
-
-sheppy's `docs.yml` becomes a call to it. Any repo that later needs its own
-front door adopts one by adding the same call — the standalone path is also the
-decoupling path.
-
-Each standalone site is served from a subdomain (`sheppy.<domain>`) rather than
-a path, so `basePath` stays empty in every build and no path rewriting is needed.
+The link checker in Verification is what enforces both, since either mistake
+produces a 404 in the built output.
 
 ### Deploys and triggering
 
-- Hub: rammp-docs Pages, custom domain at the apex, `basePath` empty.
-- sheppy: its own Pages, custom domain `sheppy.<domain>`.
-- Setting a custom domain makes GitHub redirect the old `rammp-org.github.io/*`
-  URLs automatically. No redirect stubs are needed and existing links keep
-  working.
+- Pages deploys from the hub repo, serving `rammp-org.github.io/`. `basePath`
+  is empty; the existing `DOCS_BASE_PATH` variable stays in `next.config.mjs`
+  so a future custom domain or path move is a workflow input change.
+- Sheppy's Pages deploy is disabled, freeing `/sheppy` for the hub.
 - A source repo push to `main` touching `docs/**` fires a `repository_dispatch`
-  at rammp-docs. This needs one fine-grained org PAT with permission to dispatch
-  on rammp-docs.
+  at the hub. This needs one fine-grained org PAT with permission to dispatch on
+  the hub repo.
 - A six-hourly cron on the hub is the backstop, so a dispatch that fails
   silently costs staleness rather than a stalled tree.
 
@@ -192,24 +202,41 @@ Run in CI on pull requests, without deploying:
    term. This is the check that proves search actually spans repos, which is the
    main thing the aggregation buys.
 3. A link checker over `out/` reports zero broken internal links.
-4. The standalone sheppy build emits the same page set at its own root.
+4. `out/` contains no reference to `rammp-org.github.io/rammp-docs`.
+5. `out/sheppy/install.sh` exists and is byte-identical to sheppy's
+   `install.sh`, so the published install command keeps working.
 
 ## Migration
 
 In order, each step independently verifiable:
 
-1. rammp-docs: add `sources.yml`, `scripts/compose.mjs`, gitignore entries, and
-   hub `_meta.js` entries. Mount sheppy from a sibling checkout. Verify locally.
-2. Wire compose into `docs.yml` and confirm the deployed hub serves `/sheppy`.
-3. Register the domain, point DNS, set the custom domain on rammp-docs Pages.
-4. sheppy: move `website/content/` to `docs/`, delete `website/`, replace
-   `docs.yml` with a call to `child-site.yml`, add the dispatch step, set its
-   Pages custom domain. Move `website/AGENTS.md` and `website/CLAUDE.md`
-   guidance to the new location.
+1. Rename `rammp-docs` to `rammp-org.github.io` on GitHub and update the local
+   remote. Confirm Pages serves the existing site at the org root with
+   `DOCS_BASE_PATH=""`.
+2. Add `sources.yml`, `scripts/compose.mjs`, gitignore entries, and hub
+   `_meta.js` entries. Mount sheppy from a sibling checkout and verify locally.
+3. Wire compose into `docs.yml`; confirm the deployed hub serves `/sheppy`.
+4. sheppy: move `website/content/` to `docs/`, delete `website/` (including the
+   postbuild `cp` that publishes `install.sh`, now handled by `assets`), delete
+   its `docs.yml`, disable its Pages deploy, add the dispatch workflow. Move the
+   guidance in `website/AGENTS.md` and `website/CLAUDE.md` to the new location.
 5. Add `dojo`, `rammp-deployments`, and `rammp-module-template` to `sources.yml`.
+
+Step 3 must land before step 4, so `/sheppy` is never unserved. Confirm
+`/sheppy/install.sh` resolves from the hub before disabling sheppy's Pages —
+that is the one step that can break something already in use.
 
 ## Deferred
 
+- **Standalone per-repo sites.** Revisit when a custom domain exists, at which
+  point sheppy can publish to `sheppy.<domain>`. The mechanism: a `workflow_call`
+  workflow in the hub that builds the shared scaffold against one repo's `docs/`,
+  which that repo calls in ~8 lines. Splitting a repo out also means converting
+  its cross-repo root-absolute links to absolute canonical URLs — mechanical, and
+  the link checker finds them.
+- **A custom domain.** Would let the hub serve a root it fully controls, so a
+  child could hold both a section in the tree and its own subdomain — the
+  configuration the `github.io` one-owner-per-path rule forbids today.
 - **Versioned docs.** Nextra supports parallel content trees; revisit when
   something ships to outside users on a release cadence.
 - **Auto-discovering source repos** by GitHub topic instead of listing them in
