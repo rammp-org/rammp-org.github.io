@@ -296,8 +296,10 @@ export default {
 In `website/package.json`, add to `scripts`:
 
 ```json
-"test": "node --test tests/"
+"test": "node --test \"tests/**/*.test.mjs\""
 ```
+
+The glob is required, not stylistic. On Node 22.23.2, `node --test tests/` resolves `tests/` as a *module* and dies with `Cannot find module .../website/tests` — reporting 1 test, 0 passing. Measured: the glob form runs every file.
 
 - [ ] **Step 8: Commit**
 
