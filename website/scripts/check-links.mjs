@@ -16,8 +16,8 @@ export async function htmlFiles(outDir) {
 }
 
 export function internalHrefs(html) {
-  return [...html.matchAll(/href="([^"]*)"/g)]
-    .map(match => match[1])
+  return [...html.matchAll(/(?:^|\s)href=(?:"([^"]*)"|'([^']*)')/g)]
+    .map(match => match[1] ?? match[2])
     .filter(href => {
       // Exclude: schemes (http:, https:, mailto:, etc), protocol-relative (//), pure fragments (#)
       if (href.includes(':') || href.startsWith('//') || href.startsWith('#')) return false
@@ -38,7 +38,7 @@ function resolves(outDir, pageFile, href) {
     target = path.join(pageDir, clean)
   }
 
-  return existsSync(target) || existsSync(`${target}.html`) || existsSync(path.join(target, 'index.html'))
+  return existsSync(`${target}.html`) || existsSync(path.join(target, 'index.html'))
 }
 
 export async function brokenLinks(outDir) {
