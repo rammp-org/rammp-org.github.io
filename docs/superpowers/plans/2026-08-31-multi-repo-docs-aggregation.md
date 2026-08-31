@@ -661,7 +661,7 @@ In `website/app/layout.jsx`, remove the `docsRepositoryBase` and `editLink` prop
 - [ ] **Step 7: Verify against a real build**
 
 ```bash
-cd website && CI=1 npm run compose && npx next build
+cd website && CI=1 node scripts/compose.mjs && npx next build
 grep -o 'https://github.com/rammp-org/sheppy/edit/main/docs/[^"]*' out/sheppy/index.html | head -1
 grep -c 'Edit this page on GitHub' out/sheppy/index.html
 ```
@@ -795,6 +795,8 @@ so the hub has to serve that file once it owns /sheppy."
 **Interfaces:**
 - Consumes: `compose()` from Task 3.
 - Produces: `npm run build` emitting `out/sheppy/`.
+
+Until this task lands, `next build` fails on its own: `website/content/_meta.js` gained its `sheppy` entry back in Task 2, and Nextra rejects a `_meta` key with no corresponding page ("refers to a page that cannot be found"). Between Task 2 and here, a build must be preceded by `node scripts/compose.mjs`. Nothing is pushed to origin in that window, so no broken deploy can escape.
 
 - [ ] **Step 1: Add compose to the build scripts**
 
