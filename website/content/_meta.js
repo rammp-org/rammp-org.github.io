@@ -3,5 +3,6 @@ export default {
   platform: 'The platform',
   interfaces: 'Interfaces',
   building: 'Build a module',
-  running: 'Run the system'
+  running: 'Run the system',
+  sheppy: 'sheppy'
 }

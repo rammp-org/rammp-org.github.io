@@ -1,0 +1,6 @@
+# Repos whose docs/ directory is published as part of this site.
+# slug is the path it mounts at, and must also appear in website/content/_meta.js.
+- repo: rammp-org/sheppy
+  slug: sheppy
+  title: sheppy
+  assets: [install.sh]
