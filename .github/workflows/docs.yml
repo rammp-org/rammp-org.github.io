@@ -3,7 +3,13 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ['website/**', '.github/workflows/docs.yml']
+    paths: ['website/**', 'sources.yml', '.github/workflows/docs.yml']
+  pull_request:
+    paths: ['website/**', 'sources.yml', '.github/workflows/docs.yml']
+  repository_dispatch:
+    types: [docs-updated]
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -32,6 +38,9 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm test
+      - run: npm run check:links
+      - run: npm run check:search
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -39,6 +48,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
