@@ -48,11 +48,10 @@ Pages site. The hub then serves from the org root: `rammp-org.github.io/` for
 its landing page, `rammp-org.github.io/sheppy` for sheppy's docs. `basePath` is
 empty in every build.
 
-The rename is what makes the parent actually parental. It also preserves
-`rammp-org.github.io/sheppy` as a working URL — the hub answers it instead of
-sheppy's own Pages — so no inbound link breaks. The current
-`/rammp-docs` URL does disappear, which is free: the site is days old and
-nothing links to it.
+The rename is what makes the parent actually parental. `rammp-org.github.io/sheppy`
+stays a working URL as a side effect, answered by the hub rather than by
+sheppy's Pages. The `/rammp-docs` URL disappears, which is free — the site is
+days old and nothing links to it.
 
 **One owner per path.** A project Pages site takes precedence over the org
 site's same-named path, so sheppy cannot both deploy its own Pages and have the
@@ -120,12 +119,11 @@ The whole configuration of the tree:
   title: Dojo
 ```
 
-`assets` lists files outside `docs/` that the source repo's site was serving
-and must keep serving. This is not incidental: sheppy's published install
-command is `curl -LsSf https://rammp-org.github.io/sheppy/install.sh | sh`, and
-that file reaches the web today through a postbuild `cp` in sheppy's own site.
-Once the hub owns `/sheppy`, the hub must place it at the identical path or the
-install command breaks for anyone who has it saved.
+`assets` lists files outside `docs/` that a source repo needs served alongside
+its docs. Sheppy is the case: its docs say `curl -LsSf
+https://rammp-org.github.io/sheppy/install.sh | sh`, and that file reaches the
+web through a postbuild `cp` in sheppy's site today. The hub takes over serving
+it so the documented install command keeps working.
 
 Adding a repo to the tree is one entry here plus one entry in the hub's
 `website/content/_meta.js`.
@@ -162,11 +160,9 @@ cannot express this, since it is set once for the whole site.
 - a slug in `sources.yml` has no entry in the hub's `website/content/_meta.js`
   (it would render, but be unreachable from the sidebar);
 - a source repo has no `docs/` directory at its ref;
-- a copied file links to a source repo's old standalone site with an absolute
-  URL (`https://rammp-org.github.io/sheppy/some-page`) instead of a path within
-  the tree. The hub's `content/index.mdx` currently has one such link to sheppy.
-  URLs under a declared `assets` path are exempt, since those must stay absolute
-  and keep resolving.
+- a copied file links to another repo's docs with an absolute URL instead of a
+  path within the tree. The hub's `content/index.mdx` has one such link to
+  sheppy today.
 
 ### Link conventions
 
@@ -203,8 +199,7 @@ Run in CI on pull requests, without deploying:
    main thing the aggregation buys.
 3. A link checker over `out/` reports zero broken internal links.
 4. `out/` contains no reference to `rammp-org.github.io/rammp-docs`.
-5. `out/sheppy/install.sh` exists and is byte-identical to sheppy's
-   `install.sh`, so the published install command keeps working.
+5. `out/sheppy/install.sh` exists, so the documented install command works.
 
 ## Migration
 
@@ -220,11 +215,11 @@ In order, each step independently verifiable:
    postbuild `cp` that publishes `install.sh`, now handled by `assets`), delete
    its `docs.yml`, disable its Pages deploy, add the dispatch workflow. Move the
    guidance in `website/AGENTS.md` and `website/CLAUDE.md` to the new location.
+   Rewrite its outbound links per the conventions above.
 5. Add `dojo`, `rammp-deployments`, and `rammp-module-template` to `sources.yml`.
 
-Step 3 must land before step 4, so `/sheppy` is never unserved. Confirm
-`/sheppy/install.sh` resolves from the hub before disabling sheppy's Pages —
-that is the one step that can break something already in use.
+Sheppy is early enough that brief breakage during the migration is acceptable;
+these steps do not need to be choreographed to avoid it.
 
 ## Deferred
 
