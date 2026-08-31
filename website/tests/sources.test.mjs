@@ -44,6 +44,18 @@ test('rejects duplicate slugs', () => {
   )
 })
 
+test('rejects a slug that is not a single path segment', () => {
+  for (const slug of ['../foo', 'a/b', '..', '.']) {
+    assert.throws(
+      () => normalizeSources([{ repo: 'rammp-org/sheppy', slug, title: 'sheppy' }]),
+      /must be a single path segment/
+    )
+  }
+  assert.doesNotThrow(
+    () => normalizeSources([{ repo: 'rammp-org/x', slug: 'module-template', title: 'X' }])
+  )
+})
+
 test('rejects a top-level value that is not a list', () => {
   assert.throws(() => normalizeSources({ repo: 'x' }), /must contain a list/)
 })

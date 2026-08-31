@@ -21,22 +21,21 @@ async function resetDir(dir) {
   await mkdir(dir, { recursive: true })
 }
 
-export async function copyDocs(fromDocsDir, toDir, exclude) {
+async function mirrorDocs(fromDocsDir, toDir, exclude, place) {
   await resetDir(toDir)
   const skip = new Set(exclude)
   for (const entry of await readdir(fromDocsDir, { withFileTypes: true })) {
     if (skip.has(entry.name)) continue
-    await cp(path.join(fromDocsDir, entry.name), path.join(toDir, entry.name), { recursive: true })
+    await place(path.join(fromDocsDir, entry.name), path.join(toDir, entry.name))
   }
 }
 
-export async function linkDocs(fromDocsDir, toDir, exclude) {
-  await resetDir(toDir)
-  const skip = new Set(exclude)
-  for (const entry of await readdir(fromDocsDir, { withFileTypes: true })) {
-    if (skip.has(entry.name)) continue
-    await symlink(path.join(fromDocsDir, entry.name), path.join(toDir, entry.name))
-  }
+export function copyDocs(fromDocsDir, toDir, exclude) {
+  return mirrorDocs(fromDocsDir, toDir, exclude, (from, to) => cp(from, to, { recursive: true }))
+}
+
+export function linkDocs(fromDocsDir, toDir, exclude) {
+  return mirrorDocs(fromDocsDir, toDir, exclude, symlink)
 }
 
 export function cloneRepo(source, into) {

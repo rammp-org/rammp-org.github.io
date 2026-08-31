@@ -18,6 +18,9 @@ export function normalizeSources(raw) {
     if (!REPO_PATTERN.test(entry.repo)) {
       throw new Error(`sources.yml entry ${index}: repo "${entry.repo}" must be "owner/name"`)
     }
+    if (!/^[\w.-]+$/.test(entry.slug) || entry.slug === '.' || entry.slug === '..') {
+      throw new Error(`sources.yml entry ${index}: slug "${entry.slug}" must be a single path segment`)
+    }
     if (seen.has(entry.slug)) {
       throw new Error(`sources.yml entry ${index}: duplicate slug "${entry.slug}"`)
     }
