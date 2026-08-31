@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- **Node is not on the default PATH in this environment.** Every shell running `npm` or `node` must first `export PATH="$HOME/.local/node/bin:$PATH"`. Verified: node v22.23.2, npm 10.9.8.
 - Node 22. Dependency versions stay as pinned in `website/package.json`: `next ^16.3.1`, `nextra ^4.6.1`, `nextra-theme-docs ^4.6.1`, `react ^19.1.0`, `pagefind ^1.3.0`, `overrides.zod 4.1.12`.
 - All npm commands run from `website/`. Scripts live in `website/scripts/`, tests in `website/tests/`.
 - `sources.yml` lives at the repo root; `compose.mjs` resolves it relative to its own location.
@@ -1158,7 +1159,10 @@ const outDir = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url
 const entry = JSON.parse(await readFile(path.join(outDir, '_pagefind', 'pagefind-entry.json'), 'utf8'))
 const indexed = Object.values(entry.languages).reduce((total, lang) => total + lang.page_count, 0)
 
-const pages = (await htmlFiles(outDir)).filter(file => path.basename(file) !== '404.html')
+const UNINDEXED = ['404.html', `404${path.sep}index.html`, `_not-found${path.sep}index.html`]
+
+const pages = (await htmlFiles(outDir))
+  .filter(file => !UNINDEXED.includes(path.relative(outDir, file)))
 const composed = pages.filter(file => path.relative(outDir, file).startsWith(`sheppy${path.sep}`))
 
 if (composed.length === 0) {
@@ -1167,7 +1171,7 @@ if (composed.length === 0) {
 }
 
 if (indexed !== pages.length) {
-  console.error(`pagefind indexed ${indexed} pages but out/ has ${pages.length} (excluding 404.html)`)
+  console.error(`pagefind indexed ${indexed} pages but out/ has ${pages.length} (excluding ${UNINDEXED.join(', ')})`)
   process.exit(1)
 }
 
@@ -1187,7 +1191,9 @@ In `website/package.json`, add to `scripts`:
 Run: `cd website && npm run build && npm run check:search`
 Expected: PASS, printing a count that includes sheppy pages.
 
-If the counts differ, the message prints both. Pagefind skips pages it considers to have no indexable body; identify which page that is and exclude it by path explicitly. Do not replace the equality with an inequality — the equality is what proves every composed page is searchable.
+The `UNINDEXED` list was measured against a real build of this site: Next emits `404.html`, `404/index.html` and `_not-found/index.html`, none of which pagefind indexes. On the pre-change baseline the build produced 8 HTML files while pagefind reported `page_count: 5` — those three exclusions reconcile it exactly.
+
+If the counts still differ, the message prints both. Identify the specific page and add it to `UNINDEXED` by path. Do not replace the equality with an inequality — the equality is what proves every composed page is searchable.
 
 - [ ] **Step 4: Confirm cross-repo search by hand, once**
 
