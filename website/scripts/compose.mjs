@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadSources, assertSlugsAreMounted } from './sources.mjs'
+import { injectEditUrls } from './edit-url.mjs'
 
 const websiteDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoRoot = path.dirname(websiteDir)
@@ -71,6 +72,7 @@ export async function compose() {
     } else {
       console.log(`compose: ${source.slug} <- ${source.repo}@${source.ref}`)
       await copyDocs(docsDir, target, source.exclude)
+      await injectEditUrls(target, source)
     }
   }
 }
