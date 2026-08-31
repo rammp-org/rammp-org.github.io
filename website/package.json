@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "compose": "node scripts/compose.mjs",
+    "dev": "npm run compose && next dev",
+    "build": "npm run compose && next build",
     "postbuild": "pagefind --site out --output-path out/_pagefind",
     "start": "npx serve out",
     "test": "node --test \"tests/**/*.test.mjs\""

@@ -34,7 +34,12 @@ test('copyDocs clears content removed from the source', async () => {
 test('linkDocs symlinks entries rather than copying them', async () => {
   const { docs, target } = await fixture()
   await linkDocs(docs, target, ['superpowers'])
-  assert.ok((await lstat(path.join(target, 'index.mdx'))).isSymbolicLink())
+  // Markdown files are copied to avoid symlink resolution issues in Turbopack,
+  // but directories are symlinked
+  const indexStat = await lstat(path.join(target, 'index.mdx'))
+  assert.ok(!indexStat.isSymbolicLink(), 'markdown files should be copied')
+  const guidesStat = await lstat(path.join(target, 'guides'))
+  assert.ok(guidesStat.isSymbolicLink(), 'directories should be symlinked')
   assert.deepEqual((await readdir(target)).sort(), ['guides', 'index.mdx'])
 })
 

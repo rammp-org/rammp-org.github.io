@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm, symlink } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, rm, symlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -37,7 +37,20 @@ export function copyDocs(fromDocsDir, toDir, exclude) {
 }
 
 export function linkDocs(fromDocsDir, toDir, exclude) {
-  return mirrorDocs(fromDocsDir, toDir, exclude, symlink)
+  return mirrorDocs(fromDocsDir, toDir, exclude, async (from, to) => {
+    // Copy markdown files to avoid symlink resolution issues in Turbopack,
+    // but symlink directories for efficiency
+    const stat = await lstat(from)
+    if (stat.isDirectory()) {
+      const rel = path.relative(path.dirname(to), from)
+      return symlink(rel, to)
+    } else if (from.endsWith('.md') || from.endsWith('.mdx')) {
+      return cp(from, to, { recursive: false })
+    } else {
+      const rel = path.relative(path.dirname(to), from)
+      return symlink(rel, to)
+    }
+  })
 }
 
 export async function copyAssets(sourceRepoDir, source, publicDir) {
