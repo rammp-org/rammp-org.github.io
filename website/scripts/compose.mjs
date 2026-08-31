@@ -23,12 +23,35 @@ async function resetDir(dir) {
   await mkdir(dir, { recursive: true })
 }
 
+function excludeMatch(relPosix, pattern) {
+  const rel = relPosix.toLowerCase()
+  const pat = pattern.toLowerCase()
+  return rel === pat || rel.startsWith(`${pat}/`)
+}
+
 async function mirrorDocs(fromDocsDir, toDir, exclude, place) {
   await resetDir(toDir)
-  const skip = new Set(exclude)
-  for (const entry of await readdir(fromDocsDir, { withFileTypes: true })) {
-    if (skip.has(entry.name)) continue
-    await place(path.join(fromDocsDir, entry.name), path.join(toDir, entry.name))
+  const matchedPatterns = new Set()
+  for (const entry of await readdir(fromDocsDir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue
+    const from = path.join(entry.parentPath, entry.name)
+    const rel = path.relative(fromDocsDir, from)
+    const relPosix = rel.split(path.sep).join('/')
+
+    const matchingPattern = exclude.find(pattern => excludeMatch(relPosix, pattern))
+    if (matchingPattern) {
+      matchedPatterns.add(matchingPattern)
+      continue
+    }
+
+    const to = path.join(toDir, rel)
+    await mkdir(path.dirname(to), { recursive: true })
+    await place(from, to)
+  }
+
+  const unmatched = exclude.filter(pattern => !matchedPatterns.has(pattern))
+  if (unmatched.length > 0) {
+    throw new Error(`exclude pattern(s) matched nothing under docs/: ${unmatched.join(', ')}`)
   }
 }
 
@@ -60,10 +83,25 @@ export function cloneRepo(source, into) {
   return dest
 }
 
+export function assertSlugsDontCollideWithHubPages(sources, contentDir) {
+  for (const source of sources) {
+    for (const ext of ['.mdx', '.md']) {
+      const hubPage = path.join(contentDir, `${source.slug}${ext}`)
+      if (existsSync(hubPage)) {
+        throw new Error(
+          `sources.yml slug "${source.slug}" collides with hub-owned page ` +
+          `website/content/${source.slug}${ext} — composing it would overwrite hub content`
+        )
+      }
+    }
+  }
+}
+
 export async function compose() {
   const sources = await loadSources(path.join(repoRoot, 'sources.yml'))
   const { default: meta } = await import(pathToFileURL(path.join(contentDir, '_meta.js')).href)
   assertSlugsAreMounted(sources, Object.keys(meta))
+  assertSlugsDontCollideWithHubPages(sources, contentDir)
 
   await rm(cacheDir, { recursive: true, force: true })
 
