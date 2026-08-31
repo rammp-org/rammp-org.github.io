@@ -4,3 +4,4 @@
   slug: sheppy
   title: sheppy
   assets: [install.sh]
+  exclude: [superpowers, AGENTS.md, CLAUDE.md]
