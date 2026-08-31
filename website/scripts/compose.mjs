@@ -10,6 +10,7 @@ const websiteDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoRoot = path.dirname(websiteDir)
 const contentDir = path.join(websiteDir, 'content')
 const cacheDir = path.join(websiteDir, '.sources')
+const publicDir = path.join(websiteDir, 'public')
 
 export function siblingRepoDir(hubDir, source) {
   const name = source.repo.split('/')[1]
@@ -37,6 +38,19 @@ export function copyDocs(fromDocsDir, toDir, exclude) {
 
 export function linkDocs(fromDocsDir, toDir, exclude) {
   return mirrorDocs(fromDocsDir, toDir, exclude, symlink)
+}
+
+export async function copyAssets(sourceRepoDir, source, publicDir) {
+  if (source.assets.length === 0) return
+  const target = path.join(publicDir, source.slug)
+  await mkdir(target, { recursive: true })
+  for (const asset of source.assets) {
+    const from = path.join(sourceRepoDir, asset)
+    if (!existsSync(from)) {
+      throw new Error(`${source.repo} declares asset "${asset}", which does not exist at ref ${source.ref}`)
+    }
+    await cp(from, path.join(target, path.basename(asset)))
+  }
 }
 
 export function cloneRepo(source, into) {
@@ -74,6 +88,8 @@ export async function compose() {
       await copyDocs(docsDir, target, source.exclude)
       await injectEditUrls(target, source)
     }
+
+    await copyAssets(sourceRepo, source, publicDir)
   }
 }
 
