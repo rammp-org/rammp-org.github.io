@@ -41,8 +41,9 @@ export function linkDocs(fromDocsDir, toDir, exclude) {
 }
 
 export async function copyAssets(sourceRepoDir, source, publicDir) {
-  if (source.assets.length === 0) return
   const target = path.join(publicDir, source.slug)
+  await rm(target, { recursive: true, force: true })
+  if (source.assets.length === 0) return
   await mkdir(target, { recursive: true })
   for (const asset of source.assets) {
     const from = path.join(sourceRepoDir, asset)

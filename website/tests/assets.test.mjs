@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { copyAssets } from '../scripts/compose.mjs'
@@ -35,4 +36,33 @@ test('does nothing when no assets are declared', async () => {
   await assert.doesNotReject(
     () => copyAssets(repo, { slug: 'dojo', assets: [] }, path.join(root, 'public'))
   )
+})
+
+test('clears an asset that is no longer declared', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'assets-'))
+  const repo = path.join(root, 'repo')
+  await mkdir(repo, { recursive: true })
+  await writeFile(path.join(repo, 'install.sh'), 'new\n')
+  const publicDir = path.join(root, 'public')
+  const target = path.join(publicDir, 'sheppy')
+  await mkdir(target, { recursive: true })
+  await writeFile(path.join(target, 'stale.sh'), 'old\n')
+
+  await copyAssets(repo, { slug: 'sheppy', assets: ['install.sh'] }, publicDir)
+
+  assert.deepEqual((await readdir(target)).sort(), ['install.sh'])
+})
+
+test('clears the directory when a source stops declaring assets', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'assets-'))
+  const repo = path.join(root, 'repo')
+  await mkdir(repo, { recursive: true })
+  const publicDir = path.join(root, 'public')
+  const target = path.join(publicDir, 'sheppy')
+  await mkdir(target, { recursive: true })
+  await writeFile(path.join(target, 'stale.sh'), 'old\n')
+
+  await copyAssets(repo, { slug: 'sheppy', assets: [] }, publicDir)
+
+  assert.equal(existsSync(target), false)
 })
