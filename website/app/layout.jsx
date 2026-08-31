@@ -25,7 +25,10 @@ export default async function RootLayout({ children }) {
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
+          docsRepositoryBase="https://github.com/rammp-org/rammp-org.github.io/tree/main/website"
           footer={footer}
+          editLink={false}
+          feedback={{ content: false }}
           sidebar={{ defaultMenuCollapseLevel: 2 }}
         >
           {children}
