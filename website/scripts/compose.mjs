@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readdir, rm, symlink } from 'node:fs/promises'
+import { cp, mkdir, readdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -34,23 +34,6 @@ async function mirrorDocs(fromDocsDir, toDir, exclude, place) {
 
 export function copyDocs(fromDocsDir, toDir, exclude) {
   return mirrorDocs(fromDocsDir, toDir, exclude, (from, to) => cp(from, to, { recursive: true }))
-}
-
-export function linkDocs(fromDocsDir, toDir, exclude) {
-  return mirrorDocs(fromDocsDir, toDir, exclude, async (from, to) => {
-    // Copy markdown files to avoid symlink resolution issues in Turbopack,
-    // but symlink directories for efficiency
-    const stat = await lstat(from)
-    if (stat.isDirectory()) {
-      const rel = path.relative(path.dirname(to), from)
-      return symlink(rel, to)
-    } else if (from.endsWith('.md') || from.endsWith('.mdx')) {
-      return cp(from, to, { recursive: false })
-    } else {
-      const rel = path.relative(path.dirname(to), from)
-      return symlink(rel, to)
-    }
-  })
 }
 
 export async function copyAssets(sourceRepoDir, source, publicDir) {
@@ -95,14 +78,13 @@ export async function compose() {
     }
 
     if (sibling) {
-      console.log(`compose: ${source.slug} <- ${docsDir} (symlinked)`)
-      await linkDocs(docsDir, target, source.exclude)
+      console.log(`compose: ${source.slug} <- ${docsDir} (local)`)
     } else {
       console.log(`compose: ${source.slug} <- ${source.repo}@${source.ref}`)
-      await copyDocs(docsDir, target, source.exclude)
-      await injectEditUrls(target, source)
     }
 
+    await copyDocs(docsDir, target, source.exclude)
+    await injectEditUrls(target, source)
     await copyAssets(sourceRepo, source, publicDir)
   }
 }
