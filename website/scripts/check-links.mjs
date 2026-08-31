@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SITE_HOST = 'rammp-org.github.io'
+const SITE_ORIGIN = 'https://rammp-org.github.io/'
 
 export async function htmlFiles(outDir) {
   const files = []
@@ -18,12 +18,26 @@ export async function htmlFiles(outDir) {
 export function internalHrefs(html) {
   return [...html.matchAll(/href="([^"]*)"/g)]
     .map(match => match[1])
-    .filter(href => href.startsWith('/') && !href.startsWith('//'))
+    .filter(href => {
+      // Exclude: schemes (http:, https:, mailto:, etc), protocol-relative (//), pure fragments (#)
+      if (href.includes(':') || href.startsWith('//') || href.startsWith('#')) return false
+      return true
+    })
 }
 
-function resolves(outDir, href) {
+function resolves(outDir, pageFile, href) {
   const clean = href.split('#')[0].split('?')[0]
-  const target = path.join(outDir, clean)
+  let target
+
+  if (href.startsWith('/')) {
+    // Root-absolute: resolve from outDir
+    target = path.join(outDir, clean)
+  } else {
+    // Relative: resolve from page's directory
+    const pageDir = path.dirname(pageFile)
+    target = path.join(pageDir, clean)
+  }
+
   return existsSync(target) || existsSync(`${target}.html`) || existsSync(path.join(target, 'index.html'))
 }
 
@@ -32,7 +46,7 @@ export async function brokenLinks(outDir) {
   for (const file of await htmlFiles(outDir)) {
     const html = await readFile(file, 'utf8')
     for (const href of internalHrefs(html)) {
-      if (!resolves(outDir, href)) broken.push({ file: path.relative(outDir, file), href })
+      if (!resolves(outDir, file, href)) broken.push({ file: path.relative(outDir, file), href })
     }
   }
   return broken
@@ -43,7 +57,7 @@ export async function staleLinks(outDir) {
   for (const file of await htmlFiles(outDir)) {
     const html = await readFile(file, 'utf8')
     for (const match of html.matchAll(/href="([^"]*)"/g)) {
-      if (match[1].includes(SITE_HOST)) {
+      if (match[1].startsWith(SITE_ORIGIN)) {
         stale.push({ file: path.relative(outDir, file), href: match[1] })
       }
     }

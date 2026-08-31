@@ -5,9 +5,11 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { internalHrefs, brokenLinks, staleLinks } from '../scripts/check-links.mjs'
 
-test('internalHrefs keeps root-relative links and drops the rest', () => {
-  const html = '<a href="/sheppy/">a</a><a href="https://example.com">b</a><a href="//cdn/x">c</a><a href="#top">d</a>'
-  assert.deepEqual(internalHrefs(html), ['/sheppy/'])
+test('internalHrefs keeps relative links as well as root-absolute ones', () => {
+  const html = '<a href="/sheppy/">a</a><a href="superpowers/">b</a><a href="./config">c</a>' +
+    '<a href="https://example.com">d</a><a href="//cdn/x">e</a><a href="#top">f</a>' +
+    '<a href="mailto:x@y.z">g</a>'
+  assert.deepEqual(internalHrefs(html), ['/sheppy/', 'superpowers/', './config'])
 })
 
 test('brokenLinks reports a link with no matching output file', async () => {
@@ -35,6 +37,17 @@ test('brokenLinks ignores fragments and query strings', async () => {
   assert.deepEqual(await brokenLinks(out), [])
 })
 
+test('brokenLinks resolves a relative link against its own page directory', async () => {
+  const out = await mkdtemp(path.join(tmpdir(), 'links-'))
+  await mkdir(path.join(out, 'sheppy', 'config'), { recursive: true })
+  await writeFile(path.join(out, 'sheppy', 'index.html'),
+    '<a href="config/">ok</a><a href="missing/">bad</a>')
+  await writeFile(path.join(out, 'sheppy', 'config', 'index.html'), 'ok')
+  const broken = await brokenLinks(out)
+  assert.equal(broken.length, 1)
+  assert.equal(broken[0].href, 'missing/')
+})
+
 test('staleLinks reports any href back to the site as an absolute URL', async () => {
   const out = await mkdtemp(path.join(tmpdir(), 'links-'))
   await writeFile(path.join(out, 'index.html'),
@@ -47,5 +60,12 @@ test('staleLinks ignores the site URL outside an href, such as a curl command', 
   const out = await mkdtemp(path.join(tmpdir(), 'links-'))
   await writeFile(path.join(out, 'index.html'),
     '<code>curl -LsSf https://rammp-org.github.io/sheppy/install.sh | sh</code>')
+  assert.deepEqual(await staleLinks(out), [])
+})
+
+test('staleLinks does not flag a GitHub URL that merely contains the site name', async () => {
+  const out = await mkdtemp(path.join(tmpdir(), 'links-'))
+  await writeFile(path.join(out, 'index.html'),
+    '<a href="https://github.com/rammp-org/rammp-org.github.io/edit/main/website/content/index.mdx">edit</a>')
   assert.deepEqual(await staleLinks(out), [])
 })
