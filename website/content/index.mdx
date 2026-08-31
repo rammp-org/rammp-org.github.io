@@ -1,0 +1,27 @@
+---
+title: Introduction
+---
+
+import { Cards } from 'nextra/components'
+
+# RAMMP
+
+Wireframe. RAMMP is a polyrepo: each functional module ships a Docker container,
+declares what it speaks in a fragment, and is launched by
+[sheppy](https://rammp-org.github.io/sheppy).
+
+```mermaid
+flowchart LR
+  M["module repos<br/>Dockerfile + fragment"] --> G["GHCR images"]
+  G --> D["rammp-deployments<br/>manifest + profiles"]
+  D --> S["sheppy"]
+  S --> R["the running chair"]
+```
+
+## Where to go next
+
+<Cards>
+  <Cards.Card title="The platform" href="/platform" arrow />
+  <Cards.Card title="Interfaces" href="/interfaces" arrow />
+  <Cards.Card title="Build a module" href="/building" arrow />
+</Cards>
