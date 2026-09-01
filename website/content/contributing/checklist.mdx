@@ -1,0 +1,73 @@
+---
+title: Before you open the PR
+---
+
+import { Callout, Cards } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. Inside
+    code blocks, <angle-brackets> mark the values to replace. */}
+
+# Before you open the PR
+
+Run through this before you ask anyone to look at your work. Most review
+comments are one of these.
+
+## The repo
+
+- [ ] Named `rammp-<thing>`, and _[public or private]_
+- [ ] Created from `rammp-module-template`, with the template's `Makefile` and CI intact
+- [ ] `make build` produces the image
+- [ ] `make check` passes
+- [ ] `make smoke` passes
+- [ ] The fragment declares **every** topic the module publishes or subscribes to
+- [ ] Message types come from `rammp-ros2-interfaces` — no new type invented for something that already exists
+- [ ] _[your own repo-level bar — licence header, design record, owner listed somewhere]_
+
+## The deployment
+
+- [ ] Image published to `ghcr.io/rammp-org/<your-repo>`, and _[visibility set correctly]_
+- [ ] Manifest entry added to `rammp-deployments`, in _[which profiles]_
+- [ ] `sheppy up <profile>` brings it to healthy from a clean state
+- [ ] `sheppy status` shows it as _[what a good line looks like]_
+- [ ] _[anything hardware-specific: what has to be plugged in, who to warn before you run it on the chair]_
+
+## The docs
+
+- [ ] `docs/` exists and has an `index.mdx`
+- [ ] Every folder under `docs/` has a `_meta.js`
+- [ ] Entry added to `sources.yml` **and** the matching slug added to `website/content/_meta.js`
+- [ ] Internal links are site paths, not `https://rammp-org.github.io/...` URLs
+- [ ] `npm run build && npm test && npm run check:links && npm run check:search` all pass locally
+
+## The pull request
+
+- [ ] _[title convention, if you have one]_
+- [ ] Description says what it does and how you tested it
+- [ ] _[linked issue, if you require one]_
+- [ ] _[who to request review from]_
+
+<Callout type="warning">
+  _[The one thing that most often sends a PR back in this project. Worth calling out here rather than burying it in the list above.]_
+</Callout>
+
+## Review
+
+| | |
+| --- | --- |
+| **Who reviews** | _[by area, or a rotation]_ |
+| **What they look for** | _[the two or three things reviewers actually check first]_ |
+| **How long it takes** | _[a realistic turnaround, and what to do if it stalls]_ |
+| **Who merges** | _[the author after approval, or a maintainer]_ |
+
+> **Fill in** — _[what happens next — the image gets tagged, the deployment
+> picks it up, the docs appear here within six hours or on the next push.
+> Tell people how they know it worked.]_
+
+## Back to
+
+<Cards>
+  <Cards.Card title="How to contribute" href="/contributing" arrow />
+  <Cards.Card title="Add a new repo" href="/contributing/new-repo" arrow />
+  <Cards.Card title="Publish its docs here" href="/contributing/publishing-docs" arrow />
+</Cards>

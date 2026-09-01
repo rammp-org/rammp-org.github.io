@@ -1,0 +1,204 @@
+---
+title: How-to guide
+---
+
+import { Callout, Steps, Cards } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. Inside
+    code blocks, <angle-brackets> mark the values to replace. */}
+
+# How-to guide
+
+This guide walks through how to run and develop on the RAMMP software
+ecosystem.
+
+> **Fill in** — _[By the end of this guide, you will be able to build and publish a docker image that can run new applications on the RAMMP hardware! Setup for getting the base docker images should take about 20 minutes.]_
+
+## Prerequisites
+
+What you need before any of the rest of this works.
+
+| | What you need | Notes |
+| --- | --- | --- |
+| **Accounts** | Membership in the [`rammp-org`](https://github.com/rammp-org) GitHub organisation | _[granted by William or Owen]_ |
+| **Docker** | _[minimum version]_ | [Set up below](#docker) |
+| **Hardware** | _[Jetson Orin NX or Jetson Orin AGX]_ | _[Images are only build for ARM]_ |
+
+{/* <Callout type="info">
+  _[The shortest path for someone who just wants to see it run — which profile
+  to bring up, and whether they need hardware at all.]_
+</Callout> */}
+
+## Docker
+
+Every node in the RAMMP system runs as a Docker container, which allows each node to run their own dependencies and environment variables independently of all other containers. Installation instructions are here: _[https://docs.docker.com/engine/install/ubuntu/]_
+
+## RAMMP base images
+
+The RAMMP system provides base images that run on the RAMMP hardware so that every module has the same ROS 2 version and the same core
+dependencies.
+
+> **Fill in** — _[what the base images give you, who maintains them, and how
+> often they change.]_
+
+| Image | Use it for | Tag |
+| --- | --- | --- |
+| `ghcr.io/rammp-org/<base>` | _[the default for most modules]_ | _[tag / pinning policy]_ |
+| `ghcr.io/rammp-org/<base-gpu>` | _[modules that need CUDA]_ | _[tag]_ |
+| _[others]_ | _[what for]_ | _[tag]_ |
+
+```bash
+# Pull one to look inside it
+docker pull ghcr.io/rammp-org/<base-image>:<tag>
+docker run --rm -it ghcr.io/rammp-org/<base-image>:<tag> bash
+```
+
+> **Fill in** — _[how to pick between them, whether you may pin a digest, and
+> what to do when you need a dependency the base image does not have — patch it
+> in your own Dockerfile, or ask for it to be added upstream.]_
+
+<Callout type="warning">
+  _[The rule about base image versions: pin or float, and what breaks when
+  someone gets this wrong.]_
+</Callout>
+
+## Create a new module
+
+A module is one functional piece of the system in its own repo, built into its
+own image, and launched by [sheppy](/sheppy) alongside everything else.
+
+<Callout type="info">
+  For the repo-level conventions — naming, visibility, who can create one — see
+  [Add a new repo](/contributing/new-repo). This section is the hands-on path.
+</Callout>
+
+<Steps>
+
+#### Create the repo from the template
+
+```bash
+# TODO: the exact command
+# gh repo create rammp-org/rammp-<your-thing> --template rammp-org/rammp-module-template --private
+git clone https://github.com/rammp-org/rammp-<your-thing>.git
+cd rammp-<your-thing>
+```
+
+#### Point the Dockerfile at a base image and at your code
+
+```dockerfile
+FROM ghcr.io/rammp-org/<base-image>:<tag>
+# TODO: the lines you are expected to edit
+```
+
+> **Fill in** — _[what to change, what to leave alone, and where your source
+> code is expected to live in the image.]_
+
+#### Declare what it speaks
+
+The fragment tells the rest of the system which topics your module publishes
+and subscribes to. Use the message types in
+[`rammp-ros2-interfaces`](/interfaces) rather than inventing new ones.
+
+```yaml
+# TODO: a real fragment for a small module
+name: <your-module>
+publishes:
+  - topic: /your/topic
+    type: <package>/msg/<Type>
+subscribes:
+  - topic: /some/input
+    type: <package>/msg/<Type>
+```
+
+</Steps>
+
+### Build and test locally
+
+Every module repo has the same make targets, so this loop is the same wherever
+you are — see [Build a module](/building).
+
+```bash
+make build   # build the image
+make check   # lint, types, unit tests
+make smoke   # bring the container up and confirm it speaks
+```
+
+| Target | What it does | When it fails |
+| --- | --- | --- |
+| `make build` | _[what it builds and tags]_ | _[usual cause]_ |
+| `make check` | _[what it runs]_ | _[usual cause]_ |
+| `make smoke` | _[what it starts and asserts]_ | _[usual cause]_ |
+
+Then run it inside a full system, as described in [Run the system](/running):
+
+```bash
+sheppy up <profile>
+sheppy status
+```
+
+> **Fill in** — _[the inner loop once it is running: how to watch logs, echo a
+> topic, exec into the container, and rebuild without tearing everything
+> down.]_
+
+<Callout type="warning">
+  _[The mistake to warn about here — for example running against hardware
+  before the mock profile passes.]_
+</Callout>
+
+### How to publish
+
+Publishing makes your image pullable by everyone else, and by the machine that
+actually runs the chair.
+
+<Steps>
+
+#### Let CI build and push it
+
+> **Fill in** — _[what the template's workflow does, what triggers it (push to
+> main, a tag, a release), and where the image lands.]_
+
+```bash
+# The image CI produces
+ghcr.io/rammp-org/<your-repo>:<tag>
+```
+
+#### Or push once by hand
+
+```bash
+docker build -t ghcr.io/rammp-org/<your-repo>:<tag> .
+docker push ghcr.io/rammp-org/<your-repo>:<tag>
+```
+
+> **Fill in** — _[the one-time setup: package visibility, linking the package
+> to the repo, permissions — and the tagging convention you want people to
+> follow.]_
+
+#### Register it in rammp-deployments
+
+```yaml
+# TODO: the manifest entry
+- name: <your-module>
+  image: ghcr.io/rammp-org/<your-repo>:<tag>
+  profiles: [<which ones>]
+```
+
+#### Confirm it comes up
+
+```bash
+sheppy up <profile>
+sheppy status
+```
+
+_[What a healthy line looks like, and where to look when it is not.]_
+
+</Steps>
+
+## Next
+
+Document what you built, then run the pre-PR checklist.
+
+<Cards>
+  <Cards.Card title="Publish its docs here" href="/contributing/publishing-docs" arrow />
+  <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
+</Cards>

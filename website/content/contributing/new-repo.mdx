@@ -1,0 +1,169 @@
+---
+title: Add a new repo
+---
+
+import { Steps, Callout, Cards, FileTree } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. Inside
+    code blocks, <angle-brackets> mark the values to replace. */}
+
+# Add a new repo
+
+A module is one functional piece of the system — a driver, a perception stage,
+a controller — in its own repo, built into its own image, and launched on its
+own by sheppy.
+
+> **Fill in** — one or two sentences: _[what makes something its own module
+> rather than a change to an existing one, and the case where you should extend
+> a repo that already exists instead.]_
+
+<Callout type="info">
+**Before you start, you need**
+
+- _[membership in the `rammp-org` GitHub organisation — and whom to ask for it]_
+- _[tools installed locally: Docker, the ROS 2 version you standardise on, make, anything else]_
+- _[rights to create a repo, or the person who creates it for you]_
+</Callout>
+
+## Before you start
+
+### Does this belong in its own repo?
+
+> **Fill in** — _[the question that settles it: does it run as its own process,
+> does it have its own release cadence, would anyone deploy it without the
+> rest?]_
+
+### Naming
+
+| Rule | Example |
+| --- | --- |
+| _[prefix every module repo]_ | `rammp-<thing>` |
+| _[drivers]_ | `rammp-<vendor>-driver` |
+| _[interfaces, shared types]_ | `rammp-ros2-interfaces` |
+
+> **Fill in** — _[are new repos public or private by default, and what has to
+> be true before one goes public.]_
+
+## Steps
+
+<Steps>
+
+### Create the repo from the template
+
+Start from
+[rammp-module-template](https://github.com/rammp-org/rammp-module-template).
+
+```bash
+# TODO: the exact command, e.g.
+# gh repo create rammp-org/rammp-<your-thing> --template rammp-org/rammp-module-template --private
+```
+
+The template gives you:
+
+<FileTree>
+  <FileTree.Folder name="rammp-your-thing" defaultOpen>
+    <FileTree.File name="Dockerfile" />
+    <FileTree.File name="Makefile" />
+    <FileTree.Folder name="fragment" defaultOpen>
+      <FileTree.File name="fragment.yaml" />
+    </FileTree.Folder>
+    <FileTree.Folder name="docs" defaultOpen>
+      <FileTree.File name="index.mdx" />
+    </FileTree.Folder>
+    <FileTree.Folder name=".github" />
+  </FileTree.Folder>
+</FileTree>
+
+> **Fill in** — _[one line per file above — and correct the tree if the
+> template's layout has moved on.]_
+
+### Point the Dockerfile at your code
+
+> **Fill in** — _[the base image and why it is pinned, the lines you are
+> expected to change, and the parts of the build that must stay as they are.]_
+
+### Declare what it speaks
+
+The fragment is how the rest of the system finds out what your module publishes
+and subscribes to. Use the message types in
+[`rammp-ros2-interfaces`](/interfaces) — do not invent a new type when one
+already fits.
+
+```yaml
+# TODO: a real fragment for a small module
+name: <your-module>
+publishes:
+  - topic: /your/topic
+    type: <package>/msg/<Type>
+subscribes:
+  - topic: /some/input
+    type: <package>/msg/<Type>
+```
+
+<Callout type="warning">
+  _[The rule people get wrong: every topic the code actually touches has to
+  appear here, including the ones you only read.]_
+</Callout>
+
+### Build and check it locally
+
+The template's make targets are the same everywhere — see
+[Build a module](/building).
+
+```bash
+make build   # image builds
+make check   # lint, types, unit tests
+make smoke   # container comes up and speaks
+```
+
+> **Fill in** — _[what the smoke test starts, what it asserts, and how long it
+> should take.]_
+
+### Publish the image
+
+Images live on GHCR at `ghcr.io/rammp-org/<your-repo>`.
+
+> **Fill in** — _[what the template's workflow publishes and on which trigger,
+> versus the one-time setup you have to do yourself: package visibility,
+> permissions, tagging convention.]_
+
+### Register it in rammp-deployments
+
+```yaml
+# TODO: the manifest entry for your module
+- name: <your-module>
+  image: ghcr.io/rammp-org/<your-repo>:<tag>
+  profiles: [<which ones>]
+```
+
+> **Fill in** — _[what the profiles are (`all-mock`, the on-hardware one, any
+> others) and which a new module should join first.]_
+
+Then bring it up as described in [Run the system](/running):
+
+```bash
+sheppy up <profile>
+sheppy status
+```
+
+</Steps>
+
+## What good looks like
+
+The bar a new repo has to clear before anyone else depends on it:
+
+| | |
+| --- | --- |
+| **Builds in CI** | _[which workflow, on which events]_ |
+| **Smoke test passes** | _[what counts as healthy]_ |
+| **Fragment is complete** | every topic in and out is declared |
+| **`docs/` exists** | at least an index page — see [Publish its docs here](/contributing/publishing-docs) |
+| **_[your own bar]_** | _[coverage, a design record, a demo — whatever you hold people to]_ |
+
+## Next
+
+<Cards>
+  <Cards.Card title="Publish its docs here" href="/contributing/publishing-docs" arrow />
+  <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
+</Cards>
