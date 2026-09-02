@@ -13,54 +13,68 @@ import { Callout, Steps, Cards } from 'nextra/components'
 This guide walks through how to run and develop on the RAMMP software
 ecosystem.
 
-> **Fill in** — _[By the end of this guide, you will be able to build and publish a docker image that can run new applications on the RAMMP hardware! Setup for getting the base docker images should take about 20 minutes.]_
+{/* LINK SUGGESTION: if a reader lands here without context, the lead is the
+    place to send them to [Introduction](/) or [The platform](/platform) for
+    what RAMMP is before they start installing things. */}
+
+<Callout type="info">
+  By the end of this guide, you will be able to build and publish a docker
+  image that can run new applications on the RAMMP hardware! Setup for getting
+  the base docker images running should take about 20 minutes.
+</Callout>
 
 ## Prerequisites
 
-What you need before any of the rest of this works.
+Docker isolates everything inside the image, but the machine you run it on must
+have the correct CPU architecture and, for `rammp-cuda`, the GPU driver.
 
-| | What you need | Notes |
-| --- | --- | --- |
-| **Accounts** | Membership in the [`rammp-org`](https://github.com/rammp-org) GitHub organisation | _[granted by William or Owen]_ |
-| **Docker** | _[minimum version]_ | [Set up below](#docker) |
-| **Hardware** | _[Jetson Orin NX or Jetson Orin AGX]_ | _[Images are only build for ARM]_ |
+**`rammp-base`** runs on any `arm64`/`aarch64` host with Docker — a Jetson, but
+also an ARM Mac (inside an `arm64` Linux VM / Docker Desktop) or an AWS Graviton
+instance, since it needs no GPU. It will not run on an x86 machine: there is no
+`amd64` variant, and you get `exec format error`.
 
-{/* <Callout type="info">
-  _[The shortest path for someone who just wants to see it run — which profile
-  to bring up, and whether they need hardware at all.]_
-</Callout> */}
+**`rammp-cuda`** runs only on a Jetson Orin with JetPack 6.1 or newer (L4T
+`r36.4+`). JetPack 6.0 (L4T `r36.2`/`r36.3`) does not work: its driver is CUDA
+12.2/12.4-era and cannot back this image's CUDA 12.6 runtime. Check the host
+with `head -1 /etc/nv_tegra_release` — it must report `R36`, revision 4 or
+later.
 
-## Docker
+{/* LINK SUGGESTION: a line here pointing at [Run the system](/running) or
+    [sheppy's getting started](/sheppy/getting-started) would help the reader
+    who has the hardware but has never brought the system up. */}
 
-Every node in the RAMMP system runs as a Docker container, which allows each node to run their own dependencies and environment variables independently of all other containers. Installation instructions are here: _[https://docs.docker.com/engine/install/ubuntu/]_
+### Docker
+
+Every node in the RAMMP system runs as a Docker container, which allows each
+node to run their own dependencies and environment variables independently of
+all other containers. Installation instructions are here:
+[https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
 
 ## RAMMP base images
 
-The RAMMP system provides base images that run on the RAMMP hardware so that every module has the same ROS 2 version and the same core
-dependencies.
+The RAMMP system provides base images that run on the RAMMP hardware so that
+every module has the same ROS 2 version and the same core dependencies.
 
-> **Fill in** — _[what the base images give you, who maintains them, and how
-> often they change.]_
+### `rammp-base`
 
-| Image | Use it for | Tag |
-| --- | --- | --- |
-| `ghcr.io/rammp-org/<base>` | _[the default for most modules]_ | _[tag / pinning policy]_ |
-| `ghcr.io/rammp-org/<base-gpu>` | _[modules that need CUDA]_ | _[tag]_ |
-| _[others]_ | _[what for]_ | _[tag]_ |
+ROS 2 Humble, Cyclone DDS, and `RAMMP-interfaces` compiled in. Use this for
+**hardware drivers and light sensor nodes** — anything that doesn't need the
+GPU.
 
-```bash
-# Pull one to look inside it
-docker pull ghcr.io/rammp-org/<base-image>:<tag>
-docker run --rm -it ghcr.io/rammp-org/<base-image>:<tag> bash
-```
+{/* LINK SUGGESTION: "RAMMP-interfaces" is the natural anchor for a link to
+    [Interfaces](/interfaces) — the reader will want the topic and message-type
+    map right at this mention. */}
 
-> **Fill in** — _[how to pick between them, whether you may pin a digest, and
-> what to do when you need a dependency the base image does not have — patch it
-> in your own Dockerfile, or ask for it to be added upstream.]_
+### `rammp-cuda`
+
+Everything in `rammp-base`, plus the CUDA 12.6 runtime libraries and
+CUDA-enabled PyTorch. **Only use it if your node needs the GPU**; it is several
+gigabytes larger.
 
 <Callout type="warning">
-  _[The rule about base image versions: pin or float, and what breaks when
-  someone gets this wrong.]_
+  If you build a module `FROM rammp-cuda`, remove `torch`/`torchvision` from
+  that module's `requirements.txt`. Reinstalling them from PyPI replaces the
+  Jetson-specific wheels with ones that cannot drive the GPU.
 </Callout>
 
 ## Create a new module
@@ -76,6 +90,10 @@ own image, and launched by [sheppy](/sheppy) alongside everything else.
 <Steps>
 
 #### Create the repo from the template
+
+{/* LINK SUGGESTION: the strongest spot for a second [Add a new repo]
+    (/contributing/new-repo) link — naming rules and the template live there,
+    and this is the step where the reader needs them. */}
 
 ```bash
 # TODO: the exact command
@@ -93,6 +111,9 @@ FROM ghcr.io/rammp-org/<base-image>:<tag>
 
 > **Fill in** — _[what to change, what to leave alone, and where your source
 > code is expected to live in the image.]_
+
+{/* LINK SUGGESTION: link back up to [RAMMP base images](#rammp-base-images)
+    here, so the reader can re-check which base to pick without scrolling. */}
 
 #### Declare what it speaks
 
@@ -115,90 +136,68 @@ subscribes:
 
 ### Build and test locally
 
-Every module repo has the same make targets, so this loop is the same wherever
-you are — see [Build a module](/building).
-
 ```bash
-make build   # build the image
-make check   # lint, types, unit tests
-make smoke   # bring the container up and confirm it speaks
+git clone https://github.com/rammp-org/RAMMP-docker.git
+cd RAMMP-docker
+
+make base          # rammp-base:1.0.0-jp6 (+ :humble)
+make cuda          # rammp-cuda:1.0.0-jp6 (+ :humble)
+make test          # smoke-test both images
 ```
 
-| Target | What it does | When it fails |
-| --- | --- | --- |
-| `make build` | _[what it builds and tags]_ | _[usual cause]_ |
-| `make check` | _[what it runs]_ | _[usual cause]_ |
-| `make smoke` | _[what it starts and asserts]_ | _[usual cause]_ |
-
-Then run it inside a full system, as described in [Run the system](/running):
-
-```bash
-sheppy up <profile>
-sheppy status
-```
-
-> **Fill in** — _[the inner loop once it is running: how to watch logs, echo a
-> topic, exec into the container, and rebuild without tearing everything
-> down.]_
-
-<Callout type="warning">
-  _[The mistake to warn about here — for example running against hardware
-  before the mock profile passes.]_
-</Callout>
+`make test` runs `scripts/smoke-test.sh` against each image. It checks that the
+image is arm64, that Cyclone is the selected middleware, that all eleven
+interface types resolve and import, and — on the Jetson — that
+`torch.cuda.is_available()` is true, that the GPU reports **sm_87**, that a
+matmul and a cuDNN convolution actually execute, and that two containers can
+discover each other over DDS.
 
 ### How to publish
 
-Publishing makes your image pullable by everyone else, and by the machine that
-actually runs the chair.
-
-<Steps>
-
-#### Let CI build and push it
-
-> **Fill in** — _[what the template's workflow does, what triggers it (push to
-> main, a tag, a release), and where the image lands.]_
+Tag a release and CI does the rest — it builds both images on GitHub's native
+arm64 runners, smoke-tests them, and pushes to GHCR:
 
 ```bash
-# The image CI produces
-ghcr.io/rammp-org/<your-repo>:<tag>
+git tag v1.0.0-jp6
+git push origin v1.0.0-jp6
 ```
 
-#### Or push once by hand
+CI rejects a tag that doesn't match `v<semver>-jp<N>`, so a mistyped tag fails
+the build instead of publishing an image whose tag doesn't say what JetPack it
+targets. A prerelease slot is allowed for rehearsals, e.g. `v1.0.0-rc1-jp6`.
+
+Pushes to `main` build and test but publish nothing, so only a tag can change
+what is in the registry. To publish by hand from the Jetson instead:
 
 ```bash
-docker build -t ghcr.io/rammp-org/<your-repo>:<tag> .
-docker push ghcr.io/rammp-org/<your-repo>:<tag>
+docker login ghcr.io
+make push
 ```
 
-> **Fill in** — _[the one-time setup: package visibility, linking the package
-> to the repo, permissions — and the tagging convention you want people to
-> follow.]_
+Images pushed to the registry can be pulled by the Jetson running on RAMMP.
+Published images should follow our versioning conventions so that Sheppy is
+able to pull the appropriate image.
 
-#### Register it in rammp-deployments
+{/* LINK SUGGESTION: "our versioning conventions" wants to be a link — to
+    [the manifest](/sheppy/manifest) or [manifest reference]
+    (/sheppy/manifest-reference), wherever the tag rules are actually written
+    down. */}
 
-```yaml
-# TODO: the manifest entry
-- name: <your-module>
-  image: ghcr.io/rammp-org/<your-repo>:<tag>
-  profiles: [<which ones>]
-```
+1. Copy `templates/module.Dockerfile` to your module repo root as `Dockerfile`,
+   and `templates/dockerignore.txt` to `.dockerignore`.
+2. Replace `<your_module>`, pick the base (`rammp-base` unless you need the
+   GPU), and **pin the version** in `FROM`.
+3. Put your node package — and any task-specific interface package — in the
+   repo. They build automatically into `/module_ws`, an overlay on top of the
+   base; the robot interface comes from the base image and is not rebuilt.
+4. Set the `CMD` to your launch file or `ros2 run` target.
 
-#### Confirm it comes up
-
-```bash
-sheppy up <profile>
-sheppy status
-```
-
-_[What a healthy line looks like, and where to look when it is not.]_
-
-</Steps>
-
-## Next
-
-Document what you built, then run the pre-PR checklist.
+{/* LINK SUGGESTION: the page currently stops here. A closing "Next" block is
+    the most useful link spot on the page — the reader has just published an
+    image and needs to document it and open a PR. Uncomment to use:
 
 <Cards>
   <Cards.Card title="Publish its docs here" href="/contributing/publishing-docs" arrow />
   <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
 </Cards>
+*/}
