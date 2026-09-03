@@ -28,29 +28,30 @@ ecosystem.
 Docker isolates everything inside the image, but the machine you run it on must
 have the correct CPU architecture and, for `rammp-cuda`, the GPU driver.
 
-**`rammp-base`** runs on any `arm64`/`aarch64` host with Docker — a Jetson, but
-also an ARM Mac (inside an `arm64` Linux VM / Docker Desktop) or an AWS Graviton
-instance, since it needs no GPU. It will not run on an x86 machine: there is no
-`amd64` variant, and you get `exec format error`.
-
-**`rammp-cuda`** runs only on a Jetson Orin with JetPack 6.1 or newer (L4T
-`r36.4+`). JetPack 6.0 (L4T `r36.2`/`r36.3`) does not work: its driver is CUDA
-12.2/12.4-era and cannot back this image's CUDA 12.6 runtime. Check the host
-with `head -1 /etc/nv_tegra_release` — it must report `R36`, revision 4 or
-later.
+- **`rammp-base`** runs on any `arm64`/`aarch64` host with Docker — a Jetson,
+  but also an ARM Mac (inside an `arm64` Linux VM / Docker Desktop) or an AWS
+  Graviton instance, since it needs no GPU.
+  - It will not run on an x86 machine: there is no `amd64` variant, and you get
+    `exec format error`.
+- **`rammp-cuda`** runs only on a Jetson Orin with JetPack 6.1 or newer (L4T
+  `r36.4+`).
+  - JetPack 6.0 (L4T `r36.2`/`r36.3`) does not work: its driver is CUDA
+    12.2/12.4-era and cannot back this image's CUDA 12.6 runtime.
+  - Check the host with `head -1 /etc/nv_tegra_release` — it must report `R36`,
+    revision 4 or later.
 
 {/* LINK SUGGESTION: a line here pointing at [Run the system](/running) or
     [sheppy's getting started](/sheppy/getting-started) would help the reader
     who has the hardware but has never brought the system up. */}
 
-### Docker
+### Install Docker
 
 Every node in the RAMMP system runs as a Docker container, which allows each
 node to run their own dependencies and environment variables independently of
 all other containers. Installation instructions are here:
 [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
 
-## RAMMP base images
+## Select RAMMP base image
 
 The RAMMP system provides base images that run on the RAMMP hardware so that
 every module has the same ROS 2 version and the same core dependencies.
@@ -62,8 +63,8 @@ ROS 2 Humble, Cyclone DDS, and `RAMMP-interfaces` compiled in. Use this for
 GPU.
 
 {/* LINK SUGGESTION: "RAMMP-interfaces" is the natural anchor for a link to
-    [Interfaces](/interfaces) — the reader will want the topic and message-type
-    map right at this mention. */}
+    [the spec](/contributing/rammp-interfaces), or to [Interfaces](/interfaces)
+    for the runtime topic map. */}
 
 ### `rammp-cuda`
 
@@ -77,62 +78,85 @@ gigabytes larger.
   Jetson-specific wheels with ones that cannot drive the GPU.
 </Callout>
 
+### How a release reaches the robot
+
+The primary path is a release build reaching the robot:
+
+<Steps>
+
+#### Tag a release
+
+Contract or base setup changes → bump `VERSION` in `Makefile`, push a `v*` tag
+(`git tag v1.0.0-jp6`).
+
+#### CI derives the version
+
+`.github/workflows/build-push.yml` runs on `ubuntu-24.04-arm` (native arm64,
+free for public repos; the Jetson is deliberately not a self-hosted runner). It
+first frees runner disk (the preinstalled dotnet/android/ghc toolchains), then
+**Derive version** strips `refs/tags/v` into the version and sets
+`publish=true`.
+
+<Callout type="info">
+  Any other ref gets `0.0.0-<sha>` and `publish=false`, so untagged pushes can
+  never touch the registry.
+</Callout>
+
+#### Both images build
+
+`make base cuda` builds both images with plain `docker build` from the repo
+root — one make invocation so base builds once.
+
+| Image | Build chain |
+| --- | --- |
+| `rammp-base` | apt installs the Cyclone RMW → `COPY RAMMP-interfaces/` → `rosdep install` → `colcon build` in `/ros2_ws` → prune |
+| `rammp-cuda` | aarch64 guard → cuda-keyring → pinned CUDA/CUPTI/cuDSS/cuDNN → `/usr/local/cuda` symlink + `ldconfig` → two-step torch install → sanity check |
+
+#### Both images are smoke-tested
+
+`make test` runs `scripts/smoke-test.sh` against both images (GPU section
+skipped on the runner).
+
+#### Only a tag publishes
+
+Only on a `v*` tag: log in to GHCR with the workflow's `GITHUB_TOKEN` and
+`make push`, tagging both images as `<version>` and `:humble` under
+`ghcr.io/rammp-org`.
+
+</Steps>
+
 ## Create a new module
 
 A module is one functional piece of the system in its own repo, built into its
 own image, and launched by [sheppy](/sheppy) alongside everything else.
 
-<Callout type="info">
-  For the repo-level conventions — naming, visibility, who can create one — see
-  [Add a new repo](/contributing/new-repo). This section is the hands-on path.
-</Callout>
+{/* LINK SUGGESTION: naming and visibility conventions for a new repo have no
+    home any more — if you write them down, this step is where to link them. */}
 
-<Steps>
+A module repo builds `FROM` the pinned tag using `templates/module.Dockerfile`,
+colcon-building its own packages into `/module_ws`.
 
-#### Create the repo from the template
+1. Copy `templates/module.Dockerfile` to your module repo root as `Dockerfile`,
+   and `templates/dockerignore.txt` to `.dockerignore`.
+2. Replace `<your_module>`, pick the base (`rammp-base` unless you need the
+   GPU), and **pin the version** in `FROM`.
+3. Put your node package — and any task-specific interface package — in the
+   repo. They build automatically into `/module_ws`, an overlay on top of the
+   base; the robot interface comes from the base image and is not rebuilt.
+4. Set the `CMD` to your launch file or `ros2 run` target.
 
-{/* LINK SUGGESTION: the strongest spot for a second [Add a new repo]
-    (/contributing/new-repo) link — naming rules and the template live there,
-    and this is the step where the reader needs them. */}
-
-```bash
-# TODO: the exact command
-# gh repo create rammp-org/rammp-<your-thing> --template rammp-org/rammp-module-template --private
-git clone https://github.com/rammp-org/rammp-<your-thing>.git
-cd rammp-<your-thing>
-```
-
-#### Point the Dockerfile at a base image and at your code
-
-```dockerfile
-FROM ghcr.io/rammp-org/<base-image>:<tag>
-# TODO: the lines you are expected to edit
-```
-
-> **Fill in** — _[what to change, what to leave alone, and where your source
-> code is expected to live in the image.]_
-
-{/* LINK SUGGESTION: link back up to [RAMMP base images](#rammp-base-images)
+{/* LINK SUGGESTION: link back up to [Select RAMMP base image](#select-rammp-base-image)
     here, so the reader can re-check which base to pick without scrolling. */}
 
-#### Declare what it speaks
+### What happens at container start
 
-The fragment tells the rest of the system which topics your module publishes
-and subscribes to. Use the message types in
-[`rammp-ros2-interfaces`](/interfaces) rather than inventing new ones.
+Container entrypoint: `docker/entrypoint.sh` (installed as
+`/ros_entrypoint.sh`; default `CMD ["bash"]`).
 
-```yaml
-# TODO: a real fragment for a small module
-name: <your-module>
-publishes:
-  - topic: /your/topic
-    type: <package>/msg/<Type>
-subscribes:
-  - topic: /some/input
-    type: <package>/msg/<Type>
-```
-
-</Steps>
+At container start, `docker/entrypoint.sh` sources `/opt/ros/humble` →
+`/ros2_ws/install` → `/module_ws/install`, then `exec "$@"`; with
+`--network host --ipc host`, Cyclone (per `docker/cyclonedds.xml`) autodetects
+the robot's real NIC and discovers nodes in other containers.
 
 ### Build and test locally
 
@@ -151,6 +175,9 @@ interface types resolve and import, and — on the Jetson — that
 `torch.cuda.is_available()` is true, that the GPU reports **sm_87**, that a
 matmul and a cuDNN convolution actually execute, and that two containers can
 discover each other over DDS.
+
+Smoke-test one image: `./scripts/smoke-test.sh rammp-cuda:1.0.0-jp6` (defaults to
+that image with no argument).
 
 ### How to publish
 
@@ -183,21 +210,24 @@ able to pull the appropriate image.
     (/sheppy/manifest-reference), wherever the tag rules are actually written
     down. */}
 
-1. Copy `templates/module.Dockerfile` to your module repo root as `Dockerfile`,
-   and `templates/dockerignore.txt` to `.dockerignore`.
-2. Replace `<your_module>`, pick the base (`rammp-base` unless you need the
-   GPU), and **pin the version** in `FROM`.
-3. Put your node package — and any task-specific interface package — in the
-   repo. They build automatically into `/module_ws`, an overlay on top of the
-   base; the robot interface comes from the base image and is not rebuilt.
-4. Set the `CMD` to your launch file or `ros2 run` target.
+## Run it on the robot
+
+```bash
+docker run --rm --runtime nvidia --network host --ipc host ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+```
+
+| Flag | Why it is there |
+| --- | --- |
+| `--runtime nvidia` | injects the driver |
+| `--network host` | makes DDS discovery work |
+| `--ipc host` | enables Cyclone shared memory |
 
 {/* LINK SUGGESTION: the page currently stops here. A closing "Next" block is
     the most useful link spot on the page — the reader has just published an
-    image and needs to document it and open a PR. Uncomment to use:
+    image and needs the message types and the pre-PR checklist. Uncomment:
 
 <Cards>
-  <Cards.Card title="Publish its docs here" href="/contributing/publishing-docs" arrow />
+  <Cards.Card title="RAMMP-interfaces spec" href="/contributing/rammp-interfaces" arrow />
   <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
 </Cards>
 */}

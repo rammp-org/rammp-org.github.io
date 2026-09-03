@@ -1,0 +1,154 @@
+---
+title: RAMMP-interfaces spec
+---
+
+import { Callout, Steps, Cards } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. Inside
+    code blocks, <angle-brackets> mark the values to replace. */}
+
+# RAMMP-interfaces spec
+
+`RAMMP-interfaces` is the shared vocabulary of the system: the message, service
+and action types that every module uses to talk to every other module. It is
+compiled into [`rammp-base`](/contributing/how-to#select-rammp-base-image), so any
+module built on a RAMMP base image already has it.
+
+> **Fill in** — _[one paragraph: why the types are shared rather than defined
+> per module, and what that buys you.]_
+
+<Callout type="info">
+  For the current topic map — who publishes what at runtime — see
+  [Interfaces](/interfaces). This page is the spec for the package itself: the
+  rules for what goes in it and how it changes.
+</Callout>
+
+## Where it lives
+
+| | |
+| --- | --- |
+| **Repo** | _[`rammp-org/RAMMP-interfaces` — confirm the exact name and link it]_ |
+| **Package name** | _[the ROS 2 package name you `find_package` / import]_ |
+| **Built into** | `rammp-base`, and therefore `rammp-cuda` |
+| **Maintainer** | _[who owns changes to this package]_ |
+
+## Naming conventions
+
+> **Fill in** — _[the rules you want enforced. The rows below are the usual ROS
+> 2 conventions — correct them to whatever you actually do.]_
+
+| What | Convention | Example |
+| --- | --- | --- |
+| Message type | `PascalCase`, no `Msg` suffix | _[`JointCommand`]_ |
+| Field names | `snake_case` | _[`joint_positions`]_ |
+| Units | _[SI throughout? radians or degrees?]_ | _[`position_rad`]_ |
+| Topic names | _[`snake_case`, namespaced by subsystem]_ | _[`/arm/joint_states`]_ |
+| Frame IDs | _[the frame naming scheme]_ | _[`base_link`]_ |
+| Timestamps | _[which clock, and whether every message carries a header]_ | _[`std_msgs/Header`]_ |
+
+## The catalogue
+
+> **Fill in** — _[list what the package actually contains. Keep this hand-written
+> until it is worth generating, the same way [Interfaces](/interfaces) does.]_
+
+### Messages
+
+| Type | Purpose | Published by |
+| --- | --- | --- |
+| _[`ArmState`]_ | _[what it carries]_ | _[which module]_ |
+| _[`SeatCommand`]_ | _[what it carries]_ | _[which module]_ |
+
+### Services
+
+| Type | Purpose | Served by |
+| --- | --- | --- |
+| _[`SetMode`]_ | _[what it does]_ | _[which module]_ |
+
+### Actions
+
+| Type | Purpose | Served by |
+| --- | --- | --- |
+| _[`MoveTo`]_ | _[what it does]_ | _[which module]_ |
+
+## Versioning and compatibility
+
+Because the types are compiled into the base images, a change here reaches
+every module the next time it rebuilds.
+
+> **Fill in** — _[how versions are tagged, whether modules pin a version, and
+> what happens to a module built against an older base image.]_
+
+| Change | Breaking? | What you have to do |
+| --- | --- | --- |
+| Add a new message type | _[no]_ | _[just add it]_ |
+| Add a field to an existing type | _[?]_ | _[?]_ |
+| Rename or remove a field | _[yes]_ | _[the staged rollout you expect]_ |
+| Change units or semantics | _[yes, and silently]_ | _[how to avoid this entirely]_ |
+
+<Callout type="warning">
+  _[The compatibility rule people get wrong — for example changing a field's
+  meaning without renaming it, which breaks every subscriber without any build
+  error to warn them.]_
+</Callout>
+
+## Adding or changing a type
+
+<Steps>
+
+#### Check whether it already exists
+
+Look through the catalogue above and the
+[topic map](/interfaces) first. _[The rule: prefer an existing type over a
+near-duplicate, and say who to ask when you are unsure.]_
+
+#### Decide where it belongs
+
+_[Shared package versus a task-specific interface package in your own module
+repo — the how-to guide mentions the latter. Say which cases justify each.]_
+
+#### Write the definition
+
+```
+# TODO: a real .msg example
+std_msgs/Header header
+float64[] joint_positions
+```
+
+#### Rebuild the base images
+
+_[Who rebuilds `rammp-base` and `rammp-cuda`, how long it takes, and how
+downstream modules pick the change up.]_
+
+#### Get it reviewed
+
+_[Who signs off on an interface change, and whether it needs a design record.]_
+
+</Steps>
+
+## Using it in a module
+
+Your module gets the package from the base image — you do not add it to
+`requirements.txt` or build it yourself.
+
+```python
+# TODO: a real import
+from rammp_interfaces.msg import <Type>
+```
+
+```cmake
+# TODO: the CMake / package.xml lines, if a C++ node needs them
+find_package(rammp_interfaces REQUIRED)
+```
+
+> **Fill in** — _[what to do when your module needs a type that is not in the
+> shared package yet: a task-specific interface package in your own repo, and
+> when to promote one into `RAMMP-interfaces`.]_
+
+## Related
+
+<Cards>
+  <Cards.Card title="How-to guide" href="/contributing/how-to" arrow />
+  <Cards.Card title="Interfaces (topic map)" href="/interfaces" arrow />
+  <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
+</Cards>
