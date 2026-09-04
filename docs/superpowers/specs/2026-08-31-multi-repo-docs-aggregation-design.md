@@ -77,6 +77,17 @@ acceptable because the coupling is in publishing, not in content. Content stays
 in each source repo, so decoupling later means giving that repo a workflow that
 builds the shared scaffold against its own `docs/`.
 
+**Trust boundary.** Composing a source repo's MDX and `_meta.js` into the hub
+means Nextra executes them during the hub's Pages-deploying build: MDX compiles
+to JS that runs at build time, and `_meta.js` is `import()`ed directly. So
+anyone who can push to `main` in a mounted repo can run code in the hub's build
+job and publish whatever that code produces at the org root — the composed
+tree carries no sandboxing between sources. That is fine for org-internal
+repos, where push access to `main` is already a trusted position. It is the
+fact that decides whether a repo outside the org's control could ever be
+mounted: it could not, without first adding review or sandboxing between
+compose and build.
+
 ## Architecture
 
 ### Repo roles
@@ -147,10 +158,23 @@ before writing so removed pages do not linger.
 --filter=blob:none`), copies `docs/` to `website/content/<slug>/`.
 
 **Local mode.** If a sibling checkout exists — `../sheppy/docs`, which is how
-`~/atdev` is already laid out — symlink it instead of cloning. This preserves
-local preview for doc authors, who otherwise lose it when their repo sheds its
-scaffold: edit `~/atdev/sheppy/docs/install.mdx`, and the hub's dev server shows
-it at `/sheppy/install`. One dev server covers the whole tree.
+`~/atdev` is already laid out — compose copies it into `website/content/<slug>/`
+instead of cloning, the same way CI does. This preserves local preview for doc
+authors, who otherwise lose it when their repo sheds its scaffold: edit
+`~/atdev/sheppy/docs/install.mdx`, re-run `npm run dev` (or `npm run compose`),
+and the hub's dev server shows it at `/sheppy/install`. One dev server covers
+the whole tree, but there is no watcher — `npm run dev` composes once at
+startup, so seeing a further edit to a source repo means re-running compose
+(or restarting `dev`) yourself.
+
+The Architecture originally called for symlinking the sibling checkout instead
+of copying, for zero-latency local preview. That did not ship: Turbopack (Next's
+dev bundler) cannot resolve page modules through symlinks, so a symlinked
+sibling's pages 404 in `next dev`. Copying is what actually works today. If a
+watcher is built later to remove the manual re-run step, it must keep copying
+rather than reintroduce symlinking — a symlinked source tree would make
+`injectEditUrls` write `editUrl` frontmatter directly into the doc author's own
+working tree, corrupting the file they're editing.
 
 **Assets.** Each source's `assets` entries are copied from the repo root into
 `website/public/<slug>/`, so they land at `out/<slug>/<name>` beside its docs.
@@ -250,6 +274,9 @@ these steps do not need to be choreographed to avoid it.
 
 ## To resolve during implementation
 
-- Whether Next's dev watcher reliably picks up edits through symlinked content
+- ~~Whether Next's dev watcher reliably picks up edits through symlinked content
   directories. If it does not, local mode falls back to copying plus a watcher
-  that re-runs compose on change.
+  that re-runs compose on change.~~ Resolved: Turbopack cannot resolve page
+  modules through a symlinked content directory, so local mode copies (see
+  Local mode above). The watcher was not built; `npm run dev` composes once,
+  and a doc author re-runs it to pick up further edits in the source repo.

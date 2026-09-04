@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { parse } from 'yaml'
 
-const DEFAULT_EXCLUDE = ['superpowers']
+const DEFAULT_EXCLUDE = ['superpowers', 'AGENTS.md', 'CLAUDE.md']
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/
 
 export function normalizeSources(raw) {

@@ -3,5 +3,8 @@ node_modules/
 out/
 next-env.d.ts
 .sources/
-content/sheppy/
-public/sheppy/
+# Composed sources land under content/<slug>/ and public/<slug>/. The hub's
+# own content is flat .mdx today, so this doesn't catch it; a future hub
+# section that needs its own directory must be negated with `!`.
+content/*/
+public/*/

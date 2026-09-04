@@ -12,6 +12,16 @@ test('internalHrefs keeps relative links as well as root-absolute ones', () => {
   assert.deepEqual(internalHrefs(html), ['/sheppy/', 'superpowers/', './config'])
 })
 
+test('internalHrefs ignores data-href, matching only a real href attribute boundary', () => {
+  const html = '<button data-href="/sheppy/guides">menu</button><a href="/real/">a</a>'
+  assert.deepEqual(internalHrefs(html), ['/real/'])
+})
+
+test('internalHrefs accepts single-quoted href values', () => {
+  const html = "<a href='/single/'>a</a>"
+  assert.deepEqual(internalHrefs(html), ['/single/'])
+})
+
 test('brokenLinks reports a link with no matching output file', async () => {
   const out = await mkdtemp(path.join(tmpdir(), 'links-'))
   await mkdir(path.join(out, 'sheppy'), { recursive: true })
@@ -46,6 +56,23 @@ test('brokenLinks resolves a relative link against its own page directory', asyn
   const broken = await brokenLinks(out)
   assert.equal(broken.length, 1)
   assert.equal(broken[0].href, 'missing/')
+})
+
+test('brokenLinks reports a link resolving to a directory with no index.html', async () => {
+  const out = await mkdtemp(path.join(tmpdir(), 'links-'))
+  await mkdir(path.join(out, 'sheppy', 'guides'), { recursive: true })
+  await writeFile(path.join(out, 'sheppy', 'index.html'), '<a href="./guides">x</a>')
+  const broken = await brokenLinks(out)
+  assert.equal(broken.length, 1)
+  assert.equal(broken[0].href, './guides')
+})
+
+test('brokenLinks accepts a link to a real file that is not a page', async () => {
+  const out = await mkdtemp(path.join(tmpdir(), 'links-'))
+  await mkdir(path.join(out, '_next', 'static'), { recursive: true })
+  await writeFile(path.join(out, '_next', 'static', 'app.css'), 'body{}')
+  await writeFile(path.join(out, 'index.html'), '<a href="/_next/static/app.css">css</a>')
+  assert.deepEqual(await brokenLinks(out), [])
 })
 
 test('staleLinks reports any href back to the site as an absolute URL', async () => {

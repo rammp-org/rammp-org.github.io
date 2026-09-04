@@ -1,4 +1,4 @@
-# rammp-docs
+# rammp-org.github.io
 
 The RAMMP documentation site — <https://rammp-org.github.io>.
 

@@ -8,7 +8,7 @@ test('applies defaults for ref, assets and exclude', () => {
   ])
   assert.equal(source.ref, 'main')
   assert.deepEqual(source.assets, [])
-  assert.deepEqual(source.exclude, ['superpowers'])
+  assert.deepEqual(source.exclude, ['superpowers', 'AGENTS.md', 'CLAUDE.md'])
 })
 
 test('keeps explicit values', () => {
