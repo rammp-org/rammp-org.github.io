@@ -5,5 +5,5 @@ export default {
   building: 'Build a module',
   running: 'Run the system',
   sheppy: 'sheppy',
-  'kinova-gen3-ros2': 'Kinova Gen3 ROS 2'
+  'kinova-gen3-ros2': 'Controlling the arm'
 }

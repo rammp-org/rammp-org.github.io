@@ -7,7 +7,7 @@
   exclude: [superpowers, AGENTS.md, CLAUDE.md]
 - repo: rammp-org/kinova-gen3-ros2
   slug: kinova-gen3-ros2
-  title: Kinova Gen3 ROS 2
+  title: Controlling the arm
   # Beyond the default exclusions (superpowers, AGENTS.md, CLAUDE.md): the
   # on-robot runbook and the dated handoff notes are operational records, not
   # user-facing docs. They stay in the repo.
