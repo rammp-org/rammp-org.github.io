@@ -23,33 +23,14 @@ ecosystem.
   the base docker images running should take about 20 minutes.
 </Callout>
 
-## Prerequisites
+## Before you start
 
-Docker isolates everything inside the image, but the machine you run it on must
-have the correct CPU architecture and, for `rammp-cuda`, the GPU driver.
-
-- **`rammp-base`** runs on any `arm64`/`aarch64` host with Docker — a Jetson,
-  but also an ARM Mac (inside an `arm64` Linux VM / Docker Desktop) or an AWS
-  Graviton instance, since it needs no GPU.
-  - It will not run on an x86 machine: there is no `amd64` variant, and you get
-    `exec format error`.
-- **`rammp-cuda`** runs only on a Jetson Orin with JetPack 6.1 or newer (L4T
-  `r36.4+`). The chair's own Jetson is documented in
-  [Compute](/platform/compute), with the commands to check a board against
-  that baseline.
-  - JetPack 6.0 (L4T `r36.2`/`r36.3`) does not work: its driver is CUDA
-    12.2/12.4-era and cannot back this image's CUDA 12.6 runtime.
-
-{/* LINK SUGGESTION: a line here pointing at [Run the system](/running) or
-    [sheppy's getting started](/sheppy/getting-started) would help the reader
-    who has the hardware but has never brought the system up. */}
-
-### Install Docker
-
-Every node in the RAMMP system runs as a Docker container, which allows each
-node to run their own dependencies and environment variables independently of
-all other containers. Installation instructions are here:
-[https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
+This guide assumes a machine that has been through
+[Developer setup](/setup) — a Jetson on the
+[Gen 1.5 baseline](/platform#software-baseline) with Docker and sheppy
+installed. A module that does not need the GPU can be built and run on any
+arm64 host with Docker instead; there is no amd64 variant of either base
+image.
 
 ## Select RAMMP base image
 

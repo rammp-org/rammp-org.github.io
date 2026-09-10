@@ -15,8 +15,9 @@ import { Callout } from 'nextra/components'
 
 Gen 1.5 is the current RAMMP chair: the hardware every module on this site is
 built against. This page is a tour of what is on it — the wheelchair base, the
-Kinova arm and its wrist attachment, the compute, and the sensor suite. The
-software interfaces to each live elsewhere on this site.
+Kinova arm and its wrist attachment, the compute, and the sensor suite. Setting
+a Jetson up to develop against it is [Developer setup](/setup); the software
+interfaces to each part are under [Interfaces](/interfaces).
 
 ## The wheelchair base
 
@@ -68,9 +69,41 @@ Kinova developed a custom wrist attachment that exposes I/O that runs through th
 
 ## Compute
 
-Everything runs on a single NVIDIA Jetson AGX Orin with a real-time kernel and
-a 1 TB NVMe drive. What it is, what has to be true of it, and how to set one
-up: [Compute](/platform/compute).
+Everything on the chair — the arm driver, the base, perception, and every
+module you contribute — runs on one NVIDIA Jetson.
+
+| | |
+| --- | --- |
+| Module | [NVIDIA Jetson AGX Orin 64GB Developer Kit](https://developer.nvidia.com/embedded/learn/get-started-jetson-agx-orin-devkit) |
+| SoC | Tegra234 — 12 Arm Cortex-A78AE cores, Ampere GPU at compute capability `sm_87` |
+| Memory | 64 GB, shared between CPU and GPU |
+| Storage | WD_BLACK SN7100 1 TB NVMe SSD (`WDS100T4X0E`), M.2 2280, PCIe Gen4, in the dev kit's M.2 Key M slot |
+
+The GPU is why the [`rammp-cuda`](/contributing/how-to#rammp-cuda) base image
+exists. The NVMe is there because the dev kit's 64 GB of eMMC is not enough:
+`rammp-cuda` alone is several gigabytes, every module is its own image on top
+of it, and during an upgrade you hold more than one tag of each.
+
+### Software baseline
+
+| | |
+| --- | --- |
+| JetPack | 6.1 or newer — _[the exact version on the chair]_. **Not 6.0**: its L4T r36.2/r36.3 driver predates the CUDA 12.6 runtime in `rammp-cuda`. |
+| Jetson Linux (L4T) | r36.4.x |
+| OS | Ubuntu 22.04, arm64 |
+| CUDA | 12.6 — the driver comes from the host's L4T, the runtime libraries ship inside the image |
+| Kernel | Linux 5.15 with the PREEMPT_RT patch set — `5.15-rt-tegra` |
+| Docker | Docker Engine _[pinned version]_, with the NVIDIA Container Runtime that JetPack installs |
+
+### Real-time
+
+Two things on the chair have hard deadlines. The Kinova Gen3 low-level driver
+closes a 1 kHz torque loop over Ethernet, and a missed cycle trips the arm's
+watchdog and faults it. _[The base actuation loop and its rate.]_ Both need
+bounded wake-up latency, which the stock JetPack kernel does not give, so the
+Jetson runs a PREEMPT_RT kernel with one core isolated for the control loop.
+The settings that make that hold, and how to apply them, are in
+[Developer setup](/setup#the-jetson).
 
 ## Sensor Suite
 

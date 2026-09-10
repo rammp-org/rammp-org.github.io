@@ -1,0 +1,195 @@
+---
+title: Developer setup
+---
+
+import { Callout, Steps, Cards } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. Inside
+    code blocks, <angle-brackets> mark the values to replace. */}
+
+# Developer setup
+
+This page is for software developers. It takes a Jetson from a blank board to
+a machine that runs the RAMMP system and builds modules for it: flash it, make
+it real-time, install Docker and sheppy, and bring the system up once. Each
+step says what has to be true and links to the document that walks you
+through it; it does not repeat NVIDIA's or Docker's instructions.
+
+What the board is and the software it has to run are on the
+[RAMMP Gen 1.5](/platform#compute) page. This page is the procedure.
+
+## Before you start
+
+- A **Jetson AGX Orin** — the chair's own, or a development board. Both are
+  set up the same way.
+- An **x86 Ubuntu host** to flash it from. NVIDIA's SDK Manager runs neither
+  on the Jetson itself nor on a Mac.
+- A **1 TB NVMe SSD**, fitted before you flash. The chair's is a WD_BLACK
+  SN7100 (`WDS100T4X0E`).
+
+<Callout type="info">
+  Not touching the GPU or the arm? `rammp-base` runs on any arm64 host with
+  Docker — an ARM Mac inside an arm64 Linux VM, or an AWS Graviton instance —
+  so you can skip straight to [Docker](#docker). It will not run on an x86
+  machine: there is no amd64 variant, and you get `exec format error`.
+</Callout>
+
+## The Jetson
+
+<Steps>
+
+### Fit the SSD
+
+Into the dev kit's M.2 Key M slot —
+[Developer Kit user guide](https://developer.nvidia.com/embedded/learn/jetson-agx-orin-devkit-user-guide/index.html).
+Do it now: adding the drive after flashing means flashing again, or migrating
+Docker's `data-root` by hand.
+
+### Flash JetPack to the NVMe
+
+From the x86 host, with
+[SDK Manager](https://developer.nvidia.com/sdk-manager). Pick JetPack
+_[the version on the chair]_ — 6.1 or newer, never 6.0 — and NVMe as the
+storage target, so the root filesystem and Docker's image store live on the
+drive from the start —
+[Jetson Linux quick start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html).
+
+### Install the real-time kernel
+
+On JetPack 6 it is an apt package set, not a flash option:
+
+```bash
+sudo apt install nvidia-l4t-rt-kernel nvidia-l4t-rt-kernel-headers \
+  nvidia-l4t-rt-kernel-oot-modules nvidia-l4t-display-rt-kernel
+```
+
+Reboot, then confirm —
+[Real-Time Kernel Using OTA Update](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Kernel/KernelCustomization.html#real-time-kernel-using-ota-update).
+
+```bash
+head -1 /etc/nv_tegra_release   # "# R36 (release), REVISION: 4.x" or later
+uname -r                        # ends in -rt-tegra
+cat /sys/kernel/realtime        # 1
+```
+
+### Set the power model to MAXN
+
+`sudo nvpmodel -m 0`, then `sudo jetson_clocks` —
+[Power and performance](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/PlatformPowerAndPerformance/JetsonOrinNanoSeriesJetsonOrinNxSeriesAndJetsonAgxOrinSeries.html).
+
+### Isolate the real-time core
+
+Append `isolcpus=11 nohz_full=11 rcu_nocbs=11` to the `APPEND` line in
+`/boot/extlinux/extlinux.conf` and reboot. Core 11 is the highest-numbered
+core on the AGX Orin; the arm's control loop is pinned there. Keep the
+original line as a second `LABEL` so a typo does not leave the board
+unbootable, and do this at the console, not over SSH —
+[rt-tuning §B](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#b-boot-time-tunings-kernel-cmdline--needs-a-reboot).
+
+### Grant real-time privileges once
+
+The arm driver runs without `sudo`. It needs `rtprio` and `memlock` limits
+and a udev rule for `/dev/cpu_dma_latency`;
+[`rt_grant_once.sh`](https://github.com/rammp-org/kinova-gen3-driver/blob/main/scripts/rt_grant_once.sh)
+in the driver repo sets them up. Log out and back in afterwards.
+
+### Apply the runtime tunings
+
+From a checkout of
+[`kinova-gen3-driver`](https://github.com/rammp-org/kinova-gen3-driver):
+
+```bash
+sudo ./scripts/rt_setup.sh 11
+```
+
+It sets the `performance` governor, locks clocks, disables deep idle, removes
+RT throttling, pins timers and turns off transparent huge pages.
+
+<Callout type="warning">
+  These reset on reboot. Run the script after every boot, or _[how it is made
+  persistent on the chair]_.
+</Callout>
+
+### Check that it holds
+
+A PREEMPT_RT kernel is necessary but not sufficient; every row below has to
+be true, or the tail latency comes back. The reasoning behind each is in the
+driver's
+[real-time tuning guide](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md).
+
+| Setting | Must be | Check |
+| --- | --- | --- |
+| Kernel | PREEMPT_RT | `cat /sys/kernel/realtime` → `1` |
+| Power model | MAXN — all cores, no power cap | `sudo nvpmodel -q` |
+| CPU governor | `performance` on the RT core | `cat /sys/devices/system/cpu/cpu11/cpufreq/scaling_governor` |
+| Clocks | locked at maximum | `sudo jetson_clocks --show` |
+| Core isolation | at least one core reserved for the control loop | `grep -o 'isolcpus=[^ ]*' /proc/cmdline` |
+| Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
+| RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
+| Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
+| Transparent huge pages | `never` | `cat /sys/kernel/mm/transparent_hugepage/enabled` |
+
+Then measure:
+
+```bash
+sudo apt install rt-tests
+sudo taskset -c 11 cyclictest -m -t1 -p 90 -i 1000 -D 60
+```
+
+_[the max latency you accept before trusting the board]_ —
+[rt-tuning §D](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#d-validate--measure-dont-assume).
+
+</Steps>
+
+## Docker
+
+Every module runs as a container, and the base images assume the host's
+Docker matches the chair's. Install Docker Engine **_[pinned version]_** —
+not the latest — from Docker's apt repository; their guide has a section on
+installing a specific version:
+[Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
+Then add yourself to the `docker` group so it runs without `sudo`:
+[Linux post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
+
+The NVIDIA Container Runtime comes with JetPack; nothing to install. Confirm
+Docker can see it, then that a base image can see the GPU:
+
+```bash
+docker info | grep -i runtimes                              # lists nvidia
+docker run --rm --runtime nvidia --network host --ipc host \
+  ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6 \
+  python3 -c 'import torch; print(torch.cuda.is_available())'   # True
+```
+
+What each flag is for, and how modules are built on that image, is in the
+[how-to guide](/contributing/how-to#run-it-on-the-robot).
+
+## sheppy
+
+[sheppy](/sheppy) launches and supervises every module on the chair. One
+line installs it —
+[Getting started → Install](/sheppy/getting-started#install) — and puts
+`sheppy` and `sheppyd` on your `PATH`.
+
+## First run
+
+The chair's manifest lives in
+[`rammp-deployments`](https://github.com/rammp-org/rammp-deployments). Clone
+it, go to the deployment's directory, and open sheppy there:
+
+```bash
+git clone git@github.com:rammp-org/rammp-deployments.git
+cd rammp-deployments/december_2026
+sheppy
+```
+
+The TUI opens on that manifest. Start nodes by hand from there — the keys
+are in [the 90-second walkthrough](/sheppy/getting-started#the-90-second-walkthrough).
+
+## Next
+
+<Cards>
+  <Cards.Card title="Contributing" href="/contributing" arrow />
+  <Cards.Card title="RAMMP Gen 1.5" href="/platform" arrow />
+</Cards>
