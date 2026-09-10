@@ -1,5 +1,5 @@
 ---
-title: The platform
+title: RAMMP Gen 1.5
 ---
 
 import { Callout } from 'nextra/components'
@@ -11,9 +11,12 @@ import { Callout } from 'nextra/components'
     <figure> block with ![alt](/filename.jpg). Prefer a photo of our actual
     hardware over a vendor product shot. */}
 
-# The physical RAMMP platform
+# RAMMP Gen 1.5
 
-This page provides information on the hardware RAMMP is built on. This includes the custom wheelchair base, the Kinova robotic arm, and the sensor suite. The hardware specs will be described or linked here, and software interfaces will be provided in other pages in this website.
+Gen 1.5 is the current RAMMP chair: the hardware every module on this site is
+built against. This page is a tour of what is on it — the wheelchair base, the
+Kinova arm and its wrist attachment, the compute, and the sensor suite. The
+software interfaces to each live elsewhere on this site.
 
 ## The wheelchair base
 
@@ -62,6 +65,12 @@ RAMMP uses a [Kinova Gen3](https://www.kinovarobotics.com/product/gen3-robots) 7
 </Callout>
 
 Kinova developed a custom wrist attachment that exposes I/O that runs through the arm.
+
+## Compute
+
+Everything runs on a single NVIDIA Jetson AGX Orin with a real-time kernel and
+a 1 TB NVMe drive. What it is, what has to be true of it, and how to set one
+up: [Compute](/platform/compute).
 
 ## Sensor Suite
 

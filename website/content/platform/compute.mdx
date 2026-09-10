@@ -1,0 +1,156 @@
+---
+title: Compute
+---
+
+import { Callout, Cards } from 'nextra/components'
+
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write. */}
+
+# Compute
+
+Everything on RAMMP Gen 1.5 — the arm driver, the base, perception, and every
+module you contribute — runs on one NVIDIA Jetson. This page says what that
+machine is, what has to be true of it, and where NVIDIA's own documentation
+takes over. It does not repeat that documentation.
+
+## The board
+
+| | |
+| --- | --- |
+| Module | [NVIDIA Jetson AGX Orin 64GB Developer Kit](https://developer.nvidia.com/embedded/learn/get-started-jetson-agx-orin-devkit) |
+| SoC | Tegra234 — 12 Arm Cortex-A78AE cores, Ampere GPU at compute capability `sm_87` |
+| Memory | 64 GB, shared between CPU and GPU |
+
+The GPU is why the [`rammp-cuda`](/contributing/how-to#rammp-cuda) base image
+exists. Modules that do not need it build on `rammp-base` and would run on any
+arm64 host; on the chair they share the same board.
+
+## Storage
+
+| | |
+| --- | --- |
+| Drive | WD_BLACK SN7100 1 TB NVMe SSD, part number `WDS100T4X0E` |
+| Form factor | M.2 2280, PCIe Gen4 |
+| Slot | The dev kit's M.2 Key M slot |
+
+The 64 GB of eMMC the dev kit ships with is not enough. `rammp-cuda` alone is
+several gigabytes, every module is its own image on top of it, and during an
+upgrade you hold more than one tag of each. Flash JetPack to the NVMe so the
+root filesystem — and with it Docker's image store — lives on the drive from
+the start.
+
+<Callout type="info">
+  Fit the SSD **before** you flash. SDK Manager can target the NVMe directly;
+  adding the drive afterwards means flashing again or migrating Docker's
+  `data-root` by hand.
+</Callout>
+
+## Software baseline
+
+| | |
+| --- | --- |
+| JetPack | 6.1 or newer — _[the exact version on the chair]_. **Not 6.0**: its L4T r36.2/r36.3 driver predates the CUDA 12.6 runtime in `rammp-cuda`. |
+| Jetson Linux (L4T) | r36.4.x |
+| OS | Ubuntu 22.04, arm64 |
+| CUDA | 12.6 — the driver comes from the host's L4T, the runtime libraries ship inside the image |
+| Kernel | Linux 5.15 with the PREEMPT_RT patch set — `5.15-rt-tegra` |
+| Container runtime | Docker with the NVIDIA Container Runtime, both installed by JetPack |
+
+Check a board against the baseline with three commands:
+
+```bash
+head -1 /etc/nv_tegra_release   # "# R36 (release), REVISION: 4.x" or later
+uname -r                        # ends in -rt-tegra
+cat /sys/kernel/realtime        # 1
+```
+
+The JetPack floor is enforced by the base images, not just by this page:
+`rammp-cuda`'s smoke test refuses to run on a host older than r36.4.
+
+## Real-time
+
+Two things on the chair have hard deadlines:
+
+- **The arm.** The Kinova Gen3 low-level driver closes a 1 kHz torque loop
+  over Ethernet. A missed cycle trips the arm's watchdog and faults it.
+- **The base.** _[the base actuation loop and its rate]_
+
+Both need bounded wake-up latency, which the stock JetPack kernel does not
+give. A PREEMPT_RT kernel is necessary but not sufficient — a handful of
+system settings also have to hold, or the tail latency comes back. These are
+the settings; the reasoning behind each is in the driver's
+[real-time tuning guide](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md).
+
+| Setting | Must be | Check |
+| --- | --- | --- |
+| Kernel | PREEMPT_RT | `cat /sys/kernel/realtime` → `1` |
+| Power model | MAXN — all cores, no power cap | `sudo nvpmodel -q` |
+| CPU governor | `performance` on the RT core | `cat /sys/devices/system/cpu/cpu11/cpufreq/scaling_governor` |
+| Clocks | locked at maximum | `sudo jetson_clocks --show` |
+| Core isolation | at least one core reserved for the control loop | `grep -o 'isolcpus=[^ ]*' /proc/cmdline` |
+| Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
+| RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
+| Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
+| Transparent huge pages | `never` | `cat /sys/kernel/mm/transparent_hugepage/enabled` |
+
+The examples use core 11, the highest-numbered core on the AGX Orin; the
+control loop is pinned there.
+
+<Callout type="warning">
+  Everything in that table except the kernel and core isolation resets on
+  reboot. The driver repo's
+  [`rt_setup.sh`](https://github.com/rammp-org/kinova-gen3-driver/blob/main/scripts/rt_setup.sh)
+  applies the lot in one go — run it after every boot, or _[how it is made
+  persistent on the chair]_.
+</Callout>
+
+## Setting one up
+
+What has to happen, in order. Each step is one line here and a link to the
+document that walks you through it.
+
+1. **Fit the SSD.** M.2 Key M slot on the dev kit —
+   [Developer Kit user guide](https://developer.nvidia.com/embedded/learn/jetson-agx-orin-devkit-user-guide/index.html).
+2. **Flash JetPack to the NVMe** from an x86 Ubuntu host running
+   [SDK Manager](https://developer.nvidia.com/sdk-manager). Pick JetPack
+   _[the version above]_ and NVMe as the storage target —
+   [Jetson Linux quick start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html).
+3. **Install the real-time kernel.** On JetPack 6 it is an apt package set,
+   not a flash option:
+   ```bash
+   sudo apt install nvidia-l4t-rt-kernel nvidia-l4t-rt-kernel-headers \
+     nvidia-l4t-rt-kernel-oot-modules nvidia-l4t-display-rt-kernel
+   ```
+   then reboot and confirm `uname -r` ends in `-rt-tegra` —
+   [Real-Time Kernel Using OTA Update](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Kernel/KernelCustomization.html#real-time-kernel-using-ota-update).
+4. **Set the power model to MAXN.** `sudo nvpmodel -m 0`, then
+   `sudo jetson_clocks` —
+   [Power and performance](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/PlatformPowerAndPerformance/JetsonOrinNanoSeriesJetsonOrinNxSeriesAndJetsonAgxOrinSeries.html).
+5. **Isolate the RT core.** Append `isolcpus=11 nohz_full=11 rcu_nocbs=11`
+   to the `APPEND` line in `/boot/extlinux/extlinux.conf` and reboot. Keep the
+   original line as a second `LABEL` so a typo does not leave the board
+   unbootable, and do it at the console, not over SSH —
+   [rt-tuning §B](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#b-boot-time-tunings-kernel-cmdline--needs-a-reboot).
+6. **Grant real-time privileges once.** The driver runs without `sudo`; it
+   needs `rtprio` and `memlock` limits and a udev rule for
+   `/dev/cpu_dma_latency`.
+   [`rt_grant_once.sh`](https://github.com/rammp-org/kinova-gen3-driver/blob/main/scripts/rt_grant_once.sh)
+   sets them up; log out and back in afterwards.
+7. **Apply the runtime tunings** with `sudo rt_setup.sh 11`, and check the
+   table above.
+8. **Verify with `cyclictest`.** `sudo apt install rt-tests`, then
+   `sudo taskset -c 11 cyclictest -m -t1 -p 90 -i 1000 -D 60`. _[the max
+   latency you accept before trusting the board]_ —
+   [rt-tuning §D](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#d-validate--measure-dont-assume).
+9. **Docker.** JetPack installs Docker and the NVIDIA Container Runtime;
+   nothing more is needed on the host. How every module runs on it —
+   `--runtime nvidia --network host --ipc host` — is in the
+   [how-to guide](/contributing/how-to#run-it-on-the-robot).
+
+## Next
+
+<Cards>
+  <Cards.Card title="RAMMP Gen 1.5" href="/platform" arrow />
+  <Cards.Card title="How-to guide" href="/contributing/how-to" arrow />
+</Cards>

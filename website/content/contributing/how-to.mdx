@@ -34,11 +34,11 @@ have the correct CPU architecture and, for `rammp-cuda`, the GPU driver.
   - It will not run on an x86 machine: there is no `amd64` variant, and you get
     `exec format error`.
 - **`rammp-cuda`** runs only on a Jetson Orin with JetPack 6.1 or newer (L4T
-  `r36.4+`).
+  `r36.4+`). The chair's own Jetson is documented in
+  [Compute](/platform/compute), with the commands to check a board against
+  that baseline.
   - JetPack 6.0 (L4T `r36.2`/`r36.3`) does not work: its driver is CUDA
     12.2/12.4-era and cannot back this image's CUDA 12.6 runtime.
-  - Check the host with `head -1 /etc/nv_tegra_release` — it must report `R36`,
-    revision 4 or later.
 
 {/* LINK SUGGESTION: a line here pointing at [Run the system](/running) or
     [sheppy's getting started](/sheppy/getting-started) would help the reader
