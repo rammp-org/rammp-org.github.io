@@ -27,6 +27,13 @@ What the board is and the software it has to run are on the
   on the Jetson itself nor on a Mac.
 - A **1 TB NVMe SSD**, fitted before you flash. The chair's is a WD_BLACK
   SN7100 (`WDS100T4X0E`).
+- A clone of
+  [`rammp-deployments`](https://github.com/rammp-org/rammp-deployments) on the
+  Jetson once it boots. It holds the host scripts below and the chair's
+  manifest:
+  ```bash
+  git clone git@github.com:rammp-org/rammp-deployments.git
+  ```
 
 <Callout type="info">
   Not touching the GPU or the arm? `rammp-base` runs on any arm64 host with
@@ -89,26 +96,28 @@ unbootable, and do this at the console, not over SSH —
 
 ### Grant real-time privileges once
 
-The arm driver runs without `sudo`. It needs `rtprio` and `memlock` limits
-and a udev rule for `/dev/cpu_dma_latency`;
-[`rt_grant_once.sh`](https://github.com/rammp-org/kinova-gen3-driver/blob/main/scripts/rt_grant_once.sh)
-in the driver repo sets them up. Log out and back in afterwards.
+Real-time processes run without `sudo`. They need `rtprio` and `memlock`
+limits and a udev rule for `/dev/cpu_dma_latency`:
+
+```bash
+sudo rammp-deployments/scripts/rt_grant_once.sh
+```
+
+Log out and back in afterwards.
 
 ### Apply the runtime tunings
 
-From a checkout of
-[`kinova-gen3-driver`](https://github.com/rammp-org/kinova-gen3-driver):
-
 ```bash
-sudo ./scripts/rt_setup.sh 11
+sudo rammp-deployments/scripts/rt_setup.sh 11
 ```
 
 It sets the `performance` governor, locks clocks, disables deep idle, removes
 RT throttling, pins timers and turns off transparent huge pages.
 
 <Callout type="warning">
-  These reset on reboot. Run the script after every boot, or _[how it is made
-  persistent on the chair]_.
+  These reset on reboot. Make them stick with the systemd unit next to the
+  script: copy `scripts/rt-setup.service` to `/etc/systemd/system/`, point its
+  `ExecStart` at your clone, and `sudo systemctl enable --now rt-setup.service`.
 </Callout>
 
 ### Check that it holds
@@ -174,12 +183,11 @@ line installs it —
 
 ## First run
 
-The chair's manifest lives in
-[`rammp-deployments`](https://github.com/rammp-org/rammp-deployments). Clone
-it, go to the deployment's directory, and open sheppy there:
+The chair's manifest is in the `rammp-deployments` clone from
+[Before you start](#before-you-start). Go to the deployment's directory and
+open sheppy there:
 
 ```bash
-git clone git@github.com:rammp-org/rammp-deployments.git
 cd rammp-deployments/december_2026
 sheppy
 ```
