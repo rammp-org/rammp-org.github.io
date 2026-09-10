@@ -10,16 +10,21 @@ import { Callout, Steps, Cards } from 'nextra/components'
 
 # RAMMP-interfaces spec
 
+<Callout type="warning">
+  **Not defined yet.** The `RAMMP-interfaces` package does not exist at the time
+  of writing. Every type name, convention and table on this page is a worked
+  example of the shape the spec will take, not a description of something you
+  can depend on today — so do not build against it. This notice comes down when
+  the package lands.
+</Callout>
+
 `RAMMP-interfaces` is the shared vocabulary of the system: the message, service
 and action types that every module uses to talk to every other module. It is
 compiled into [`rammp-base`](/contributing/how-to#select-rammp-base-image), so any
 module built on a RAMMP base image already has it.
 
-> **Fill in** — _[one paragraph: why the types are shared rather than defined
-> per module, and what that buys you.]_
-
 <Callout type="info">
-  For the current topic map — who publishes what at runtime — see
+  For the interfaces already documented on this site, see
   [Interfaces](/interfaces). This page is the spec for the package itself: the
   rules for what goes in it and how it changes.
 </Callout>
@@ -49,8 +54,8 @@ module built on a RAMMP base image already has it.
 
 ## The catalogue
 
-> **Fill in** — _[list what the package actually contains. Keep this hand-written
-> until it is worth generating, the same way [Interfaces](/interfaces) does.]_
+> **Fill in** — _[list what the package actually contains, once it exists. Keep
+> this hand-written until it is worth generating.]_
 
 ### Messages
 
@@ -98,8 +103,8 @@ every module the next time it rebuilds.
 
 #### Check whether it already exists
 
-Look through the catalogue above and the
-[topic map](/interfaces) first. _[The rule: prefer an existing type over a
+Look through the catalogue above and the interfaces already documented under
+[Interfaces](/interfaces) first. _[The rule: prefer an existing type over a
 near-duplicate, and say who to ask when you are unsure.]_
 
 #### Decide where it belongs
@@ -149,6 +154,6 @@ find_package(rammp_interfaces REQUIRED)
 
 <Cards>
   <Cards.Card title="How-to guide" href="/contributing/how-to" arrow />
-  <Cards.Card title="Interfaces (topic map)" href="/interfaces" arrow />
+  <Cards.Card title="Interfaces" href="/interfaces" arrow />
   <Cards.Card title="Before you open the PR" href="/contributing/checklist" arrow />
 </Cards>
