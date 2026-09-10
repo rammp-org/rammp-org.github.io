@@ -4,11 +4,15 @@ title: Interfaces
 
 # Interfaces
 
-Wireframe. Message types from `rammp-ros2-interfaces`, and the topic map.
+An interface is the contract a module publishes: the topics, services and
+actions it speaks, and the message types those carry.
 
-| Topic | Type | Published by |
-| ----- | ---- | ------------ |
-| `/arm/joint_states` | `sensor_msgs/JointState` | arm driver |
-| `/camera/color/image_raw` | `sensor_msgs/Image` | sensing |
+The interfaces documented on this site:
 
-This table is hand-written for now; it becomes generated.
+- **[RAMMP-interfaces](/contributing/rammp-interfaces)** — the shared
+  vocabulary: the message, service and action types every module uses to talk
+  to every other module, and the rules for adding to them. Start here when you
+  need a type.
+- **[kinova-gen3-ros2](/kinova-gen3-ros2/interface)** — what the arm driver
+  publishes, subscribes to and serves. Also a worked example of the shape a
+  module's own interface page should take.

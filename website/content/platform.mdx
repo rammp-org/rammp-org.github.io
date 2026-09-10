@@ -2,18 +2,76 @@
 title: The platform
 ---
 
-# The platform
+import { Callout } from 'nextra/components'
 
-Wireframe. What you build against: the chair, its sensors, the arm, the base.
+{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
+    "> **Fill in** …" blockquote marks a whole section still to write.
 
-## Sensors
+    Image placeholders: drop the photo in website/public/ and replace the
+    <figure> block with ![alt](/filename.jpg). Prefer a photo of our actual
+    hardware over a vendor product shot. */}
 
-Types, locations, specs. Diagram goes here.
+# The physical RAMMP platform
 
-## Arm
+This page provides information on the hardware RAMMP is built on. This includes the custom wheelchair base, the Kinova robotic arm, and the sensor suite. The hardware specs will be described or linked here, and software interfaces will be provided in other pages in this website.
 
-State topics, how to send commands, end effector.
+## The wheelchair base
 
-## Base
+<figure style={{ margin: '1.5rem 0' }}>
+  <div style={{
+    border: '1px dashed currentColor',
+    opacity: 0.5,
+    borderRadius: '4px',
+    padding: '4rem 1rem',
+    textAlign: 'center',
+    fontSize: '0.875rem'
+  }}>
+    Photo placeholder — the wheelchair base
+  </div>
+  <figcaption style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '0.5rem' }}>
+    RAMMP wheelchair base in home position.
+  </figcaption>
+</figure>
 
-State, commands, seating axes.
+The RAMMP base was originally the [MEBot](https://www.herl.pitt.edu/mebot), or Mobility Enhancement Robotic Wheelchair, created at HERL. It is capable of actuating its caster wheels and drive wheels, which allows it to autonomously climb curbs and self-level the seat on uneven terrain. Sensors in the base include joint encoders, load cells, and an IMU.
+
+## The Kinova Gen3 arm
+
+<figure style={{ margin: '1.5rem 0' }}>
+  <div style={{
+    border: '1px dashed currentColor',
+    opacity: 0.5,
+    borderRadius: '4px',
+    padding: '4rem 1rem',
+    textAlign: 'center',
+    fontSize: '0.875rem'
+  }}>
+    Photo placeholder — the Gen3 arm mounted on the chair
+  </div>
+  <figcaption style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '0.5rem' }}>
+    Kinova Gen3 arm mounted on RAMMP
+  </figcaption>
+</figure>
+
+RAMMP uses a [Kinova Gen3](https://www.kinovarobotics.com/product/gen3-robots) 7 degree-of-freedom assistive robotic manipulator to perform manipulation tasks. 
+
+## Kinova Wrist Puck Attachment
+
+<Callout type="warning">
+  This section is unfinished, more information is to come
+</Callout>
+
+Kinova developed a custom wrist attachment that exposes I/O that runs through the arm.
+
+## Sensor Suite
+
+<Callout type="warning">
+  The sensor suite is not final, it is subject to change as we continue to explore options.
+</Callout>
+
+This is the current planned setup:
+
+| Sensor | Count | Where | Purpose |
+| --- | --- | --- | --- |
+| Fisheye camera | 4 | Corners of the base | 360 degree coverage around the chair |
+| RGBD camera | 1 | Joystick module | Scene camera for manipulation tasks |
