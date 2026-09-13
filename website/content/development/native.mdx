@@ -1,0 +1,61 @@
+---
+title: Fully native workflow
+---
+
+# Fully native workflow
+
+Every module, stable or not, cloned into `~/ros2_ws` and run from source.
+No images.
+
+This is not the recommended workflow. Use it when you need to change a
+stable module itself, or on a machine that cannot pull images. Otherwise use
+the [hybrid workflow](/development/hybrid).
+
+## What you gain and what you take on
+
+You gain complete control. Every line of the stack is in your workspace, you
+can read and change any of it, and a debugger reaches all of it.
+
+You take on building and maintaining other labs' code. Each stable module has
+its own dependencies, its own build, and its own release cadence, and the
+images exist so that you do not have to track them. Your stack also drifts
+from what the chair runs: the chair runs pinned images, and a source checkout
+is whatever commit you last pulled. A problem that appears only on the chair
+is harder to reproduce from here.
+
+## Set it up
+
+Start from the [hybrid workspace](/development/hybrid#set-up-your-workspace),
+then add the stable modules to it.
+
+| Module | Get it |
+| --- | --- |
+| Interfaces | Already in the workspace |
+| Arm driver | `git clone https://github.com/rammp-org/kinova-gen3-ros2.git` into `src/`. It vendors `kinova-gen3-driver` through its `.repos` file. |
+| Cameras | `sudo apt install ros-humble-orbbec-camera ros-humble-realsense2-camera`. The camera images contain these packages and nothing else. |
+| Base driver | Does not exist yet. |
+
+```bash
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -y
+colcon build
+source install/setup.bash
+```
+
+## Run it
+
+Two choices. Launch each module by hand with `ros2 launch`, as its own docs
+describe. Or give each node in the manifest a `launch_file` alternative on
+the `dev` machine, the same shape as the
+[`frame_counter → native`](/development/hybrid#let-sheppy-launch-it) entry,
+and save a profile that selects them. The second keeps `sheppy status` as
+the one place to see what is running.
+
+Develop your own package exactly as in the
+[hybrid workflow](/development/hybrid#write-a-package-and-run-it).
+
+## Getting back
+
+To return to the hybrid workflow, select the `docker` alternatives again. The
+source checkouts can stay in `src/`; add a `COLCON_IGNORE` file to each so
+they do not shadow the types inside the images.
