@@ -84,8 +84,10 @@ either one. A package that ships the messages it implements forces every
 consumer to depend on that implementation, and makes the contract's version
 whatever the implementation's happens to be.
 
-Task-specific interfaces that only one module speaks stay in that module's
-repo. They build into `/module_ws` alongside the node.
+A message that only one module speaks stays in that module's repo and builds
+into `/module_ws` alongside the node. It is promoted here once it is stable
+and a second module depends on it; see
+[Adding or changing a type](#adding-or-changing-a-type).
 
 ## Versioning
 
@@ -148,12 +150,13 @@ rammp-interfaces-ros2:
 
 1. Check the catalogue above and the module interface pages for an existing
    type that fits.
-2. Decide whether it is shared or task-specific. Shared goes here. Task-specific
-   goes in your module repo.
-3. Open a pull request against `rammp-interfaces-ros2` with the definition and
-   the version bump the table above calls for.
+2. If only your module speaks it, define it in your module repo and stop here.
+3. Once it is stable and a second module needs it, open a pull request against
+   `rammp-interfaces-ros2` with the definition and the version bump the table
+   above calls for.
 4. After it is tagged, RAMMP-docker bumps `INTERFACES_REF` and cuts a new base
-   image. Modules rebuild against the new tag.
+   image. Modules rebuild against the new tag, and the promoted type is
+   removed from the module repo.
 
 ## Related
 
