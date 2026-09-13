@@ -4,33 +4,34 @@ title: Development flow
 
 # Development flow
 
-RAMMP software comes from several labs, each with its own codebase and its
-own dependencies, and all of it has to run together on one chair. Docker is
-how that stays manageable:
+Our developer tooling is designed to accelerate your experimentation while
+simplifying deployment for demos. Two tools do that.
 
-- **Sharing code** is pulling an image, not building another lab's source and
-  reconciling its dependencies with yours.
-- **Deploying** is running the images that were tested, pinned by tag.
-- **Developing** stays fast because your own code is not an image yet. It
-  runs natively from `~/ros2_ws`, next to the images.
+- **Docker.** Every stable module ships as an image, built from its own repo
+  and pinned by tag. An image carries its dependencies with it, so running a
+  module does not require building it or matching its environment.
+- **[sheppy](/sheppy).** Launches and supervises every node from one
+  manifest, whether the node runs from an image or from a workspace. A node
+  can list both as alternatives, and a profile selects which one runs.
+
+With these tools:
+
+- Running code from all partners simplifies to pulling their Docker images.
+- You continue using your standard ROS 2 flow for testing your own modules.
+- Deploying for our frequent demos simplifies to launching all of the Docker
+  containers.
 
 ## Development and deployment architecture
 
 Everything on the system is ROS 2 code, and all of it can be built and run
-natively. When a piece becomes stable it is packaged into a Docker image so
-that anyone can run it without building it, and so the chair runs a known
-version of it. At any moment the system is therefore a mix: stable modules
-running from images, and code under development running from source. Both
-are on the same DDS network, so they see each other's topics without any
-extra configuration.
+natively. As experimental code becomes stable, we recommend packaging it as a
+Docker container, so that it becomes deployable for demos and can be shared
+across our institutions.
 
-[sheppy](/sheppy) launches and supervises both kinds. In its manifest, one
-node can list an image and a workspace launch as alternatives, and a profile
-selects which one runs. Moving your code from source to image is a change of
-profile, not a change to the manifest.
-
-The three workflows below are three ways to navigate that mix, depending on
-what you are working on.
+The result is a mix: modules packaged with Docker, and code building natively
+on your system. Both are on the same DDS network, so they see each other's
+topics without extra configuration. The workflows below are three options
+for managing that mix well.
 
 ## The three workflows
 
