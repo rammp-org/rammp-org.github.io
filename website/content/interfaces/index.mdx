@@ -2,14 +2,21 @@
 title: Interfaces
 ---
 
-import { Cards } from 'nextra/components'
+import { Callout } from 'nextra/components'
 
 # Interfaces
 
 The ROS 2 topics, services and actions you use to control the robot. All of
 them live in one repo,
-[rammp-interfaces-ros2](/interfaces/rammp-interfaces-ros2), which is compiled
-into every base image.
+[rammp-interfaces-ros2](https://github.com/rammp-org/rammp-interfaces-ros2),
+which is compiled into every base image.
+
+| | |
+| --- | --- |
+| Repo | [rammp-org/rammp-interfaces-ros2](https://github.com/rammp-org/rammp-interfaces-ros2) |
+| Current tag | v1.0.0 |
+| Built into | `rammp-base`, and therefore `rammp-cuda`, at the tag named by `INTERFACES_REF` in the RAMMP-docker Makefile |
+| Depends on | `builtin_interfaces` and the standard message packages only |
 
 ## The design principle
 
@@ -31,19 +38,86 @@ modules have proven they need, not from what someone guessed they might.
 | Versioned by | The repo tag, pinned in the base image | Your module's release |
 | Becomes shared when | | It is stable and a second module depends on it |
 
-## What is there today
+## The packages
 
-| Package | Controls |
+One package per subsystem, plus one for what no subsystem owns.
+
+| Package | Controls | Page |
+| --- | --- | --- |
+| `rammp_common_interfaces` | The whole robot: the emergency stop, and taking or releasing control of a resource | [Common](/interfaces/common) |
+| `rammp_arm_interfaces` | The arm: trajectories, planned moves, streamed setpoints, the gripper | [Arm](/interfaces/arm) |
+| `rammp_base_interfaces` | The wheelchair base | [Base](/interfaces/base) |
+
+A type belongs in `rammp_common_interfaces` when its contract is complete
+without knowing what is being controlled. E-stop is a broadcast about the
+whole robot. Arbitration is a token, an owner and a generation, which mean
+the same thing for an arm or a base, so each subsystem runs its own
+arbitration server speaking one protocol and an operator tool needs one
+client.
+
+## Using it in a module
+
+A module built on a base image already has the packages. Do not add them to
+`requirements.txt` or build them yourself.
+
+```python
+from rammp_arm_interfaces.msg import JointSetpoint
+from rammp_common_interfaces.msg import EStop
+```
+
+```cmake
+find_package(rammp_arm_interfaces REQUIRED)
+```
+
+To build against the repo outside a base image, pin an exact tag in your
+`.repos` file:
+
+```yaml
+rammp-interfaces-ros2:
+  type: git
+  url: https://github.com/rammp-org/rammp-interfaces-ros2.git
+  version: v1.0.0
+```
+
+## Versioning
+
+Semantic versioning. Which bump a change earns depends on where the field
+goes, not only that one was added.
+
+| Change | Bump |
 | --- | --- |
-| `rammp_common_interfaces` | The whole robot: the emergency stop, and taking or releasing control of a resource |
-| `rammp_arm_interfaces` | The arm: trajectories, planned moves, streamed setpoints, the gripper |
+| New message, service or action | minor |
+| New field appended at the end, with a default value | minor |
+| Comments, docs, whitespace | patch |
+| A field added anywhere but the end, or appended without a default | major |
+| A field removed, renamed or retyped | major |
 
-The full type list, the versioning rules, and how to promote a type are on
-the [rammp-interfaces-ros2](/interfaces/rammp-interfaces-ros2) page. How the
-arm driver serves each arm type is in the
-[arm interface reference](/kinova-gen3-ros2/interface).
+<Callout type="warning">
+  These rules hold only under Cyclone DDS, which is what the base images run.
+  On Humble a subscriber matches a publisher on the type name alone, so two
+  builds of the same type name connect even when their fields differ.
+  Appending is safe because the deserialiser stops at the end of the payload
+  and the trailing field takes its default. Inserting is not: every field
+  after the insertion reads the previous field's bytes, with no error. Under
+  Fast-DDS a mismatched subscriber does not match at all, so the appended-field
+  minor bump becomes a topic that silently never delivers.
+</Callout>
 
-<Cards>
-  <Cards.Card title="rammp-interfaces-ros2" href="/interfaces/rammp-interfaces-ros2" arrow />
-  <Cards.Card title="Arm interface reference" href="/kinova-gen3-ros2/interface" arrow />
-</Cards>
+A colcon workspace holds one version of a package, so whether two modules can
+run together reduces to whether they speak the same major. That is answerable
+by reading the base image tags they were built from.
+
+These packages depend on nothing, so they release first. Tag here, then each
+consumer bumps its pin in an ordinary pull request.
+
+## Adding or promoting a type
+
+1. Check the package pages and the module interface pages for an existing
+   type that fits.
+2. If only your module speaks it, define it in your module repo and stop here.
+3. Once it is stable and a second module needs it, open a pull request against
+   `rammp-interfaces-ros2` with the definition and the version bump the table
+   above calls for.
+4. After it is tagged, RAMMP-docker bumps `INTERFACES_REF` and cuts a new base
+   image. Modules rebuild against the new tag, and the promoted type is
+   removed from the module repo.

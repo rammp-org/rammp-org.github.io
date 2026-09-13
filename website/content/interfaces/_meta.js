@@ -1,4 +1,6 @@
 export default {
   index: 'Overview',
-  'rammp-interfaces-ros2': 'rammp-interfaces-ros2'
+  common: 'Common',
+  arm: 'Arm',
+  base: 'Base'
 }
