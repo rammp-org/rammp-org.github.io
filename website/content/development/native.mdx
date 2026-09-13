@@ -4,8 +4,8 @@ title: Fully native workflow
 
 # Fully native workflow
 
-Every module, stable or not, cloned into `~/ros2_ws` and run from source.
-No images.
+Every module, stable or not, is cloned into `~/ros2_ws` and run from
+source. Nothing runs from an image.
 
 This is not the recommended workflow. Use it when you need to change a
 stable module itself, or on a machine that cannot pull images. Otherwise use
@@ -44,8 +44,9 @@ source install/setup.bash
 
 ## Run it
 
-Two choices. Launch each module by hand with `ros2 launch`, as its own docs
-describe. Or give each node in the manifest a `launch_file` alternative on
+There are two ways to run the stack. Launch each module by hand with
+`ros2 launch`, as its own docs describe. Or give each node in the manifest a
+`launch_file` alternative on
 the `dev` machine, the same shape as the
 [`frame_counter → native`](/development/hybrid#let-sheppy-launch-it-optional) entry,
 and save a profile that selects them. The second keeps `sheppy status` as
