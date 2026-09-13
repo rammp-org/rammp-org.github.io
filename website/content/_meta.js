@@ -10,6 +10,7 @@ export default {
   '-- developing': { type: 'separator', title: 'Developing' },
   setup: 'Developer setup',
   development: 'Development flow',
+  'git-workflow': 'Recommended git workflow',
   publishing: 'Publishing a module',
   interfaces: 'Interfaces',
   sheppy: 'sheppy',
