@@ -28,7 +28,7 @@ versions it has to run are on [Software versions](/software#versions).
   Jetson once it boots. It holds the host scripts below and the chair's
   manifest:
   ```bash
-  git clone git@github.com:rammp-org/rammp-deployments.git
+  git clone git@github.com:rammp-org/rammp-deployments.git ~/rammp-deployments
   ```
 
 <Callout type="info">
@@ -99,7 +99,7 @@ Real-time processes run without `sudo`. They need `rtprio` and `memlock`
 limits and a udev rule for `/dev/cpu_dma_latency`:
 
 ```bash
-sudo rammp-deployments/scripts/rt_grant_once.sh
+sudo ~/rammp-deployments/scripts/rt_grant_once.sh
 ```
 
 Log out and back in afterwards.
@@ -107,7 +107,7 @@ Log out and back in afterwards.
 ### Apply the runtime tunings
 
 ```bash
-sudo rammp-deployments/scripts/rt_setup.sh 11
+sudo ~/rammp-deployments/scripts/rt_setup.sh 11
 ```
 
 It sets the `performance` governor, locks clocks, disables deep idle, removes
@@ -199,12 +199,14 @@ line installs it —
 
 ## Workspace
 
-Your code lives in `~/ros2_ws`, with the shared message types cloned into it.
-ROS 2 Humble is assumed to be installed.
+Your code lives in `~/ros2_ws`, with the shared message types cloned into it
+at the tag on [Software versions](/software#versions). Install ROS 2 Humble
+first, with `colcon` and `rosdep`, following
+[the ROS 2 install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html).
 
 ```bash
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone https://github.com/rammp-org/rammp-interfaces-ros2.git
+git clone --branch v1.0.0 https://github.com/rammp-org/rammp-interfaces-ros2.git
 cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y && colcon build
 ```
 
@@ -218,7 +220,7 @@ deployment's directory, and open sheppy there:
 
 ```bash
 source ~/ros2_ws/install/setup.bash
-cd rammp-deployments/december_2026
+cd ~/rammp-deployments/december_2026
 sheppy
 ```
 

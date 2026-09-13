@@ -31,7 +31,8 @@ then add the stable modules to it.
 | Module | Get it |
 | --- | --- |
 | Interfaces | Already in the workspace |
-| Arm driver | `git clone https://github.com/rammp-org/kinova-gen3-ros2.git` into `src/`. It vendors `kinova-gen3-driver` through its `.repos` file. |
+| Arm driver | `git clone https://github.com/rammp-org/kinova-gen3-ros2.git` into `src/`, then `vcs import src < src/kinova-gen3-ros2/kinova_gen3.repos` to bring in the low-level driver it vendors. |
+| Planner | The arm's `go_to_*` actions call the cuRobo planner, which is its own module: [RAMMP-CuRobo](https://github.com/rammp-org/RAMMP-CuRobo). Its install is long and GPU-bound; its README covers it. Skip it if you only need trajectory execution and setpoint streaming. |
 | Cameras | `sudo apt install ros-humble-orbbec-camera ros-humble-realsense2-camera`. The camera images contain these packages and nothing else. |
 | Base driver | Does not exist yet. |
 
@@ -57,6 +58,7 @@ Develop your own package exactly as in the
 
 ## Getting back
 
-To return to the hybrid workflow, select the `docker` alternatives again. The
-source checkouts can stay in `src/`; add a `COLCON_IGNORE` file to each so
-they do not shadow the types inside the images.
+To return to the hybrid workflow, `sheppy up real-arm-cameras` selects the
+image alternatives again. Remove the stable modules' checkouts from `src/`,
+or add a `COLCON_IGNORE` file to each, so your host builds go back to the
+pinned interfaces tag rather than whatever those checkouts carry.

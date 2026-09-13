@@ -25,23 +25,22 @@ flowchart LR
 
 ## Set up your workspace
 
-Assumes a machine that has been through [Developer setup](/setup) with ROS 2
-Humble installed.
+[Developer setup](/setup#workspace) created `~/ros2_ws` with the interfaces
+repo in it and cloned `rammp-deployments`. If you skipped that page:
 
 ```bash
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone https://github.com/rammp-org/rammp-interfaces-ros2.git
+git clone --branch v1.0.0 https://github.com/rammp-org/rammp-interfaces-ros2.git
 cd ~/ros2_ws
 rosdep install --from-paths src --ignore-src -y
 colcon build
-source install/setup.bash
-```
-
-Clone the deployment manifests next to it:
-
-```bash
 git clone git@github.com:rammp-org/rammp-deployments.git ~/rammp-deployments
 ```
+
+The tag is the one on [Software versions](/software#versions). It is the tag
+compiled into the images, so a node built here speaks the same field layouts
+as the containers. A mismatch is silent: on Humble, two builds of a type
+connect by name even when their fields differ.
 
 | Path | What it is |
 | --- | --- |
@@ -49,14 +48,10 @@ git clone git@github.com:rammp-org/rammp-deployments.git ~/rammp-deployments
 | `~/ros2_ws/src/<your_package>` | Your code |
 | `~/rammp-deployments/<deployment>/` | The manifest sheppy runs, and your profiles |
 
-The interfaces repo is the only RAMMP source you build. It is here so your
-node compiles against the same message types that are inside the images.
-
 ## Bring up the stable modules
 
-sheppyd gives every node a copy of the environment of the terminal that
-started it, so source your workspace first. Then, from the deployment
-directory:
+Source your workspace so the `ros2` commands in this terminal see your
+packages, then, from the deployment directory:
 
 ```bash
 source ~/ros2_ws/install/setup.bash
@@ -147,8 +142,9 @@ entry_points={
 
 ### Add a launch file
 
-sheppy launches packages through their launch files, so add one now even
-though the node is a single executable. `rammp_hello/launch/hello.launch.py`:
+sheppy can run an executable directly with `ros2 run`. The node gets a launch
+file anyway, because the image built later runs one, and the native and image
+alternatives should launch the same thing. `rammp_hello/launch/hello.launch.py`:
 
 ```python
 from launch import LaunchDescription
@@ -230,6 +226,12 @@ nodes:
 
 `machine: dev` makes sheppy source `ros_setup` before the command. Without
 it, the node gets only the environment sheppyd started with.
+
+The `dev` machine, this alternative, and the `dev` profile are specific to
+your workstation: `user` is your login and `ros_setup` is your workspace. Keep
+them as a local, uncommitted edit to the manifest. The pull request that
+publishes your module adds only the image alternative, as the
+[deployment workflow](/development/deployment#ship-it) describes.
 
 Open the TUI, select `frame_counter → native`, and press `space`. Press `s`
 to save the selection as a profile named `dev`. From then on:

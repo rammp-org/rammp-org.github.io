@@ -23,9 +23,14 @@ loop you develop in: an image build takes minutes and the hybrid workflow's
 ## Give the node an image alternative
 
 Start from a node that already has a `launch_file` alternative from the
-[hybrid workflow](/development/hybrid#let-sheppy-launch-it-optional). Build the image
-from the RAMMP-docker template, as on
-[Build and publish](/publishing/build-and-publish):
+[hybrid workflow](/development/hybrid#let-sheppy-launch-it-optional). Copy
+the RAMMP-docker template into the package, as on
+[Build and publish](/publishing/build-and-publish), and set its `CMD` to the
+same launch file the native alternative runs:
+
+```dockerfile
+CMD ["ros2", "launch", "rammp_hello", "hello.launch.py"]
+```
 
 ```bash
 cd ~/ros2_ws/src/rammp_hello
@@ -46,6 +51,7 @@ nodes:
           image: rammp_hello:dev
           network_mode: host
           ipc: host
+          user: "1000:1000"
           environment:
             ROS_DOMAIN_ID: "0"
         subscribes:
@@ -54,8 +60,11 @@ nodes:
           - /frame_counter/frame_count
 ```
 
-`network_mode: host` and `ipc: host` are what put the container on the same
-DDS network as everything else. A GPU module adds `runtime: nvidia`.
+`network_mode: host` and `ipc: host` put the container on the same DDS
+network as everything else, and `user` keeps its shared-memory segments
+readable from the host. What each field does is on
+[Deploy it](/publishing/deploy#the-node-entry). A GPU module adds
+`runtime: nvidia`.
 
 ## Run everything from images
 
@@ -76,8 +85,8 @@ not.
 ## Ship it
 
 Once the image behaves the same as the native node, continue with
-[Publishing a module](/publishing). CI builds the image from a release tag,
-the manifest in `rammp-deployments` pins that tag in place of `rammp_hello:dev`,
-and the node joins the `real-arm-cameras` profile. Your `dev` profile keeps
-selecting the native alternative, so developing the next change is the
-hybrid workflow again.
+[Publishing a module](/publishing). CI builds the image from a release tag.
+The pull request to `rammp-deployments` adds the node with only its image
+alternative, pinned to that tag, and adds it to the `real-arm-cameras`
+profile. The `dev` machine and native alternative stay as your local edit,
+so developing the next change is the hybrid workflow again.
