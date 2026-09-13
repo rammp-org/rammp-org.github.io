@@ -68,17 +68,23 @@ in a separate NVIDIA repository that a fresh flash does not know about, so add
 it first:
 
 ```bash
-echo "deb https://repo.download.nvidia.com/jetson/rt-kernel r36.4 main" \
+grep -q rt-kernel /etc/apt/sources.list.d/nvidia-l4t-apt-source.list \
+  || echo "deb https://repo.download.nvidia.com/jetson/rt-kernel r36.4 main" \
   | sudo tee -a /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
 sudo apt update
 sudo apt install nvidia-l4t-rt-kernel nvidia-l4t-rt-kernel-headers \
   nvidia-l4t-rt-kernel-oot-modules nvidia-l4t-display-rt-kernel
 ```
 
+The RT packages install as version `36.4.0` on a `36.4.7` board. That is
+expected: the `r36.4` suite carries one RT build for the whole r36.4 series.
+
 The install adds a `real-time` entry to `/boot/extlinux/extlinux.conf` next
 to the stock `primary` one. Open the file and make sure it says
 `DEFAULT real-time`: NVIDIA's kernel packages set `DEFAULT` to whichever
-kernel they configured last, and that is not always the real-time one.
+kernel they configured last, and that is not always the real-time one. The
+same flip happens again whenever `apt upgrade` installs a new
+`nvidia-l4t-kernel`, so re-check `DEFAULT` after any upgrade that touches it.
 Reboot, then confirm —
 [Real-Time Kernel Using OTA Update](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Kernel/KernelCustomization.html#real-time-kernel-using-ota-update).
 
@@ -100,8 +106,17 @@ Append `isolcpus=11 nohz_full=11 rcu_nocbs=11` to the `APPEND` line of the
 `DEFAULT real-time` is still set, and reboot. Core 11 is the highest-numbered
 core on the AGX Orin; the arm's control loop is pinned there. Leave the
 `primary` label untouched so a typo does not leave the board unbootable, and
-do this at the console, not over SSH —
+do this at the console, not over SSH: if the `real-time` entry fails to boot,
+press its number at the L4T boot menu during the three-second countdown to
+boot `primary` instead —
 [rt-tuning §B](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#b-boot-time-tunings-kernel-cmdline--needs-a-reboot).
+
+After the reboot, confirm the flags took and you are still on the RT kernel:
+
+```bash
+uname -r                                # ends in -rt-tegra
+grep -o 'isolcpus=[^ ]*' /proc/cmdline  # isolcpus=11
+```
 
 ### Grant real-time privileges once
 
@@ -121,7 +136,8 @@ sudo ~/rammp-deployments/scripts/rt_setup.sh 11
 ```
 
 It sets the `performance` governor, locks clocks, disables deep idle, removes
-RT throttling, pins timers and turns off transparent huge pages.
+RT throttling, pins timers, and turns off transparent huge pages where the
+kernel exposes them.
 
 <Callout type="warning">
   These reset on reboot. Make them stick with the systemd unit next to the
@@ -146,7 +162,7 @@ driver's
 | Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
 | RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
 | Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
-| Transparent huge pages | `never`, or the file absent | `cat /sys/kernel/mm/transparent_hugepage/enabled` |
+| Transparent huge pages | `[never]`, or absent | `cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \|\| echo absent` |
 
 Then measure:
 
