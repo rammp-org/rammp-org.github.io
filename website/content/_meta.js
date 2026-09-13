@@ -1,9 +1,12 @@
 export default {
   index: 'Introduction',
   '-- hardware': { type: 'separator', title: 'Hardware' },
-  platform: 'RAMMP Gen 1.5 hardware',
+  'gen-1-2': 'RAMMP Gen 1.2',
+  platform: 'RAMMP Gen 1.5',
+  'gen-2-0': 'RAMMP Gen 2.0',
   '-- software': { type: 'separator', title: 'Software stack' },
   software: 'Software versions & core repos',
+  modules: 'Modules registry',
   '-- developing': { type: 'separator', title: 'Developing' },
   setup: 'Developer setup',
   development: 'Development flow',
@@ -12,7 +15,5 @@ export default {
   sheppy: 'sheppy',
   '-- subsystems': { type: 'separator', title: 'Subsystems' },
   'kinova-gen3-ros2': 'Controlling the arm',
-  '-- modules': { type: 'separator', title: 'Modules' },
-  modules: 'Modules registry',
   contributing: { display: 'hidden' }
 }
