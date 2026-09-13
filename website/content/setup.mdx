@@ -169,6 +169,22 @@ docker run --rm --runtime nvidia --network host --ipc host \
 What each flag is for, and how modules are built on that image, is in the
 [Build and publish](/publishing/build-and-publish#run-it-on-the-robot) page.
 
+## Shell environment
+
+Two variables belong in every shell on the Jetson, and in the shell you SSH
+in from. `RMW_IMPLEMENTATION` selects Cyclone DDS, which the base images run;
+a host shell on the default RMW only partly discovers the containers.
+`COLORTERM` gives the sheppy TUI its full palette over SSH, which does not
+forward it.
+
+```bash
+for rc in ~/.bashrc ~/.zshrc; do printf '\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport COLORTERM=truecolor\n' >> "$rc"; done
+```
+
+Open a new shell afterwards. The Cyclone RMW package itself comes with the
+host ROS 2 install: `sudo apt install ros-humble-rmw-cyclonedds-cpp` if
+`ros2 doctor` reports it missing.
+
 ## sheppy
 
 [sheppy](/sheppy) launches and supervises every module on the chair. One
