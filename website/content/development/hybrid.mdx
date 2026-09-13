@@ -192,13 +192,16 @@ image was built.
 
 </Steps>
 
-## Let sheppy launch it
+## Let sheppy launch it (optional)
 
-So far sheppy runs the stable modules and you run your node by hand. Adding
-your node to the manifest makes it part of the system: it starts and stops
-with everything else, appears in `sheppy status`, and other people can bring
-it up without knowing how. A `launch_file` alternative runs `ros2 launch`
-from your workspace, so every restart runs your latest build.
+Running your node by hand with `ros2 launch`, as above, is a complete
+workflow. You do not need this step to develop.
+
+It is worth doing once your node is something other people will run. Adding
+it to the manifest makes it part of the system: it starts and stops with
+everything else, appears in `sheppy status`, and someone else can bring it up
+without knowing how. A `launch_file` alternative runs `ros2 launch` from your
+workspace, so every restart still runs your latest build.
 
 Add a machine that names your workspace, and the node:
 
