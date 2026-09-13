@@ -8,4 +8,7 @@ next-env.d.ts
 # ignored by `git add`.
 content/*/
 !content/contributing/
+!content/development/
+!content/publishing/
+!content/interfaces/
 public/*/

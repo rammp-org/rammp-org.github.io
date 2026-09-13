@@ -4,10 +4,6 @@ title: Developer setup
 
 import { Callout, Steps, Cards } from 'nextra/components'
 
-{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
-    "> **Fill in** …" blockquote marks a whole section still to write. Inside
-    code blocks, <angle-brackets> mark the values to replace. */}
-
 # Developer setup
 
 This page is for software developers. It takes a Jetson from a blank board to
@@ -16,8 +12,9 @@ it real-time, install Docker and sheppy, and bring the system up once. Each
 step says what has to be true and links to the document that walks you
 through it; it does not repeat NVIDIA's or Docker's instructions.
 
-What the board is and the software it has to run are on the
-[RAMMP Gen 1.5](/platform#compute) page. This page is the procedure.
+What the board is is on the [hardware page](/platform#compute). The versions
+it has to run are on [Software versions](/software#versions). This page is the
+procedure.
 
 ## Before you start
 
@@ -56,10 +53,9 @@ Docker's `data-root` by hand.
 ### Flash JetPack to the NVMe
 
 From the x86 host, with
-[SDK Manager](https://developer.nvidia.com/sdk-manager). Pick JetPack
-_[the version on the chair]_ — 6.1 or newer, never 6.0 — and NVMe as the
-storage target, so the root filesystem and Docker's image store live on the
-drive from the start —
+[SDK Manager](https://developer.nvidia.com/sdk-manager). Pick JetPack 6.1 or
+newer, never 6.0, and NVMe as the storage target, so the root filesystem and
+Docker's image store live on the drive from the start —
 [Jetson Linux quick start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html).
 
 ### Install the real-time kernel
@@ -146,7 +142,8 @@ sudo apt install rt-tests
 sudo taskset -c 11 cyclictest -m -t1 -p 90 -i 1000 -D 60
 ```
 
-_[the max latency you accept before trusting the board]_ —
+The maximum latency the board has to stay under before it is trusted with the
+arm is not fixed yet. What to look for in the output is in
 [rt-tuning §D](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#d-validate--measure-dont-assume).
 
 </Steps>
@@ -154,9 +151,9 @@ _[the max latency you accept before trusting the board]_ —
 ## Docker
 
 Every module runs as a container, and the base images assume the host's
-Docker matches the chair's. Install Docker Engine **_[pinned version]_** —
-not the latest — from Docker's apt repository; their guide has a section on
-installing a specific version:
+Docker matches the chair's. Install Docker Engine **27.5.1**, the version on
+[Software versions](/software#versions), from Docker's apt repository. Their
+guide has a section on installing a specific version:
 [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 Then add yourself to the `docker` group so it runs without `sudo`:
 [Linux post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
@@ -172,7 +169,7 @@ docker run --rm --runtime nvidia --network host --ipc host \
 ```
 
 What each flag is for, and how modules are built on that image, is in the
-[how-to guide](/contributing/how-to#run-it-on-the-robot).
+[Build and publish](/publishing/build-and-publish#run-it-on-the-robot) page.
 
 ## sheppy
 
@@ -198,6 +195,6 @@ are in [the 90-second walkthrough](/sheppy/getting-started#the-90-second-walkthr
 ## Next
 
 <Cards>
-  <Cards.Card title="Contributing" href="/contributing" arrow />
-  <Cards.Card title="RAMMP Gen 1.5" href="/platform" arrow />
+  <Cards.Card title="Development flow" href="/development" arrow />
+  <Cards.Card title="Publishing a module" href="/publishing" arrow />
 </Cards>

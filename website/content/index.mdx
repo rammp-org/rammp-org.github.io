@@ -6,26 +6,30 @@ import { Cards } from 'nextra/components'
 
 # RAMMP
 
-This site is the developer documentation for RAMMP. It covers what you need to
-get started building on the platform: the hardware you are building against,
-the interfaces the modules use to talk to each other, and how to write, publish
-and deploy a module of your own.
+This site is the developer documentation for RAMMP. It covers the hardware
+you are building against, the software versions it runs, how to set up a
+machine, how to work day to day, how to publish a module, and which modules
+already exist.
 
 RAMMP, the Robotic Assistive Mobility and Manipulation Platform, is an
 ARPA-H funded program led by the [Human Engineering Research Laboratories
-(HERL)](https://www.herl.pitt.edu/) at the University of Pittsburgh, developing
-robotic assistive technology that helps people with mobility impairments live
-more independently. To learn more about the program itself, see [rammp.tech](https://rammp.tech/).
+(HERL)](https://www.herl.pitt.edu/) at the University of Pittsburgh. It
+develops robotic assistive technology that helps people with mobility
+impairments live more independently. The program itself is described at
+[rammp.tech](https://rammp.tech/).
 
 ## Where to go next
 
 <Cards>
-  <Cards.Card title="RAMMP Gen 1.5" href="/platform" arrow />
+  <Cards.Card title="RAMMP Gen 1.5 hardware" href="/platform" arrow />
+  <Cards.Card title="Software versions & core repos" href="/software" arrow />
   <Cards.Card title="Developer setup" href="/setup" arrow />
-  <Cards.Card title="Interfaces" href="/interfaces" arrow />
-  <Cards.Card title="Contributing" href="/contributing" arrow />
+  <Cards.Card title="Development flow" href="/development" arrow />
+  <Cards.Card title="Publishing a module" href="/publishing" arrow />
+  <Cards.Card title="Modules registry" href="/modules" arrow />
 </Cards>
 
-Building a module is the usual reason to be here. [Developer setup](/setup)
-gets a machine ready; [Contributing](/contributing) then walks the path from
-an empty repo to a deployed image.
+New to the project: read [Development flow](/development) first. It is the
+guide the rest of the site supports. [Developer setup](/setup) gets a machine
+ready, and [Publishing a module](/publishing) takes a finished module from a
+repo to a running container on the chair.

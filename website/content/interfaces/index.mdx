@@ -1,0 +1,29 @@
+---
+title: Interfaces
+---
+
+import { Cards } from 'nextra/components'
+
+# Interfaces
+
+An interface is the contract a module publishes: the topics, services and
+actions it speaks, and the message types those carry.
+
+The shared types live in one repo,
+[rammp-interfaces-ros2](/interfaces/rammp-interfaces-ros2). It is compiled
+into the base images, so any module built on one already has every type it
+needs to talk to anything else on the robot.
+
+| Package | Covers |
+| --- | --- |
+| `rammp_common_interfaces` | What no single subsystem owns: the emergency stop, and the arbitration protocol for taking control of a resource |
+| `rammp_arm_interfaces` | Commanding and observing an arm: trajectories, planned moves, setpoint streaming, the gripper |
+
+Each module documents its own interface on its own pages. The arm driver's is
+the worked example of the shape:
+[kinova-gen3-ros2 → Interface reference](/kinova-gen3-ros2/interface).
+
+<Cards>
+  <Cards.Card title="rammp-interfaces-ros2" href="/interfaces/rammp-interfaces-ros2" arrow />
+  <Cards.Card title="Arm interface reference" href="/kinova-gen3-ros2/interface" arrow />
+</Cards>
