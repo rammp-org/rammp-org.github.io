@@ -9,10 +9,9 @@ title: RAMMP Gen 1.5
 # RAMMP Gen 1.5
 
 Gen 1.5 is the current RAMMP chair: the hardware every module on this site is
-built against. This page covers what is on it: the wheelchair base, the Kinova
-arm and its wrist attachment, the compute, and the sensor suite. The software
-it runs is on [Software versions & core repos](/software). Setting a Jetson up
-to develop against it is [Developer setup](/setup).
+built against. The software it runs is on
+[Software versions & core repos](/software). Setting a Jetson up to develop
+against it is [Developer setup](/setup).
 
 ## The wheelchair base
 
@@ -63,8 +62,7 @@ documented under [Controlling the arm](/kinova-gen3-ros2).
 ## Kinova Wrist Puck Attachment
 
 Kinova developed a custom wrist attachment that exposes I/O routed through the
-arm. Its connector pinout and the signals it carries are not documented here
-yet.
+arm.
 
 ## Compute
 
@@ -87,7 +85,7 @@ of it, and during an upgrade you hold more than one tag of each.
 
 The Kinova Gen3 low-level driver closes a 1 kHz torque loop over Ethernet. A
 missed cycle trips the arm's watchdog and faults the arm. The base actuation
-loop has a deadline of its own; its rate is not documented here yet. Both need
+loop has a deadline of its own. Both need
 bounded wake-up latency, which the stock JetPack kernel does not give, so the
 Jetson runs a PREEMPT_RT kernel with one core isolated for the control loop.
 The kernel version is on [Software versions](/software#versions). The settings

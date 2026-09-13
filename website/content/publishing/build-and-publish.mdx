@@ -30,7 +30,7 @@ FROM ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
 ```
 
 `rammp-base` unless you need the GPU. Pin the full version, not `:humble`.
-Which is which is on [Base images](/publishing/base-images).
+The difference is on [Base images](/publishing/base-images).
 
 ### Replace `<your_module>`
 
@@ -71,7 +71,7 @@ docker run --rm --runtime nvidia --network host --ipc host <your_module>:dev
 ```
 
 Drop `--runtime nvidia` for a `rammp-base` module. From a second terminal,
-`ros2 topic list` on the host should show what your node publishes.
+`ros2 topic list` on the host lists what your node publishes.
 
 ## Publish to GHCR
 

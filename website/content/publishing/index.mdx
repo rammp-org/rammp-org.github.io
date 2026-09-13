@@ -2,8 +2,6 @@
 title: Publishing a module
 ---
 
-import { Cards } from 'nextra/components'
-
 # Publishing a module
 
 RAMMP is a polyrepo. Each module lives in its own repository, builds into its
@@ -27,13 +25,17 @@ flowchart LR
 
 ## Pages
 
-<Cards>
-  <Cards.Card title="Base images" href="/publishing/base-images" arrow />
-  <Cards.Card title="Build and publish" href="/publishing/build-and-publish" arrow />
-  <Cards.Card title="Deploy it" href="/publishing/deploy" arrow />
-  <Cards.Card title="Before you open the PR" href="/publishing/checklist" arrow />
-</Cards>
+- **[Base images](/publishing/base-images)** — `rammp-base` and `rammp-cuda`,
+  which to pick, and how their tags work.
+- **[Build and publish](/publishing/build-and-publish)** — the module
+  Dockerfile, a local build, and CI to GHCR.
+- **[Deploy it](/publishing/deploy)** — the node entry in the deployment
+  manifest.
+- **[Before you open the PR](/publishing/checklist)** — the checklist.
 
-The branching and pull request conventions are on
-[Git workflow](/development/git-workflow). The message types your module
-speaks come from [rammp-interfaces-ros2](/interfaces/rammp-interfaces-ros2).
+## Related
+
+- **[Git workflow](/development/git-workflow)** — branching and pull request
+  conventions.
+- **[rammp-interfaces-ros2](/interfaces/rammp-interfaces-ros2)** — the message
+  types your module speaks.

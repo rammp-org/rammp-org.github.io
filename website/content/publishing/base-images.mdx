@@ -19,7 +19,7 @@ Both images are `linux/arm64` only. There is no amd64 variant.
 | --- | --- | --- |
 | Contains | ROS 2 Humble, Cyclone DDS, `rammp-interfaces-ros2` compiled in | Everything in `rammp-base`, plus the CUDA 12.6 runtime libraries and CUDA-enabled PyTorch |
 | Use for | Hardware drivers, sensor nodes, anything that does not need the GPU | Nodes that need the GPU |
-| Runs on | Any arm64 host with Docker: a Jetson, an ARM Mac in an arm64 Linux VM, an AWS Graviton instance | A Jetson Orin on JetPack 6.1 or newer, with `--runtime nvidia` |
+| Runs on | Any arm64 host with Docker: a Jetson, an ARM Mac in an arm64 Linux VM, an AWS Graviton instance | A Jetson Orin on JetPack 6.2.3, with `--runtime nvidia` |
 | Size | Small | Several gigabytes larger |
 
 ### `rammp-base`
@@ -51,7 +51,7 @@ Release tags are `<semver>-jp<N>`, for example `rammp-cuda:1.0.0-jp6`.
 | Part | Tracks | Changes when |
 | --- | --- | --- |
 | semver | The interface contract and the base setup | Major for a breaking contract change, minor for an additive one, patch for base plumbing |
-| `-jp<N>` | The JetPack generation the image runs on | The robot moves to a new JetPack. `jp6` means JetPack 6.1 and newer, on L4T r36.4 or later. It excludes 6.0. |
+| `-jp<N>` | The JetPack generation the image runs on | The robot moves to a new JetPack generation. `jp6` is JetPack 6 on L4T r36. |
 
 Pin the full version in your module's `FROM`. The floating `:humble` tag
 always points at the latest release, and Docker will reuse a stale cached
@@ -77,8 +77,7 @@ The current pinned version is on
 
 ## How a base image release is cut
 
-You do not need this to build a module. It is here so the tag scheme above
-makes sense.
+You do not need this to build a module.
 
 <Steps>
 
