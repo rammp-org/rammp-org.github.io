@@ -59,7 +59,7 @@ nodes:
 | `container.image` | Your image on GHCR. Pin a release tag once the module is stable; `:main` moves with every push. |
 | `network_mode: host`, `ipc: host` | DDS discovery and shared-memory transport, the same as `--network host --ipc host` by hand. |
 | `privileged`, `volumes: /dev:/dev` | Only for a node that talks to USB hardware. A pure software module omits both. |
-| `user` | Match the host user so the DDS shared-memory segments the container creates stay readable by host subscribers. Root would leave discovery working and the data plane invisible. |
+| `user` | Match the host user, so the DDS shared-memory segments the container creates stay readable by host subscribers. |
 | `publishes` | Documentation only. sheppy stores it and shows it in the TUI, and never checks it against the live graph. List every topic anyway, so the manifest is the record of what runs. |
 
 A GPU module adds `runtime: nvidia` under `container`. The container fields

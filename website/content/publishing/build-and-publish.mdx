@@ -97,7 +97,6 @@ Two worked examples to copy from:
   publish a `v*` tag that does not point at a commit on `main`.
 
 Both run on GitHub's arm64 runners, which are free for public repositories.
-The Jetson is not a self-hosted runner.
 
 To cut a release:
 
@@ -122,7 +121,7 @@ docker run --rm --runtime nvidia --network host --ipc host \
 | Flag | Why |
 | --- | --- |
 | `--runtime nvidia` | Injects the GPU driver. Required for any `rammp-cuda` image. |
-| `--network host` | DDS discovery. On a bridge network, nodes in other containers never find each other. This is the most common ROS-in-Docker failure. |
+| `--network host` | DDS discovery. On a bridge network, nodes in other containers never find each other. |
 | `--ipc host` | Lets Cyclone use shared memory between containers. |
 
 Running it by hand is for checking the image. On the chair, sheppy runs it
