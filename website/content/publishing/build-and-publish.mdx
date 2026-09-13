@@ -1,0 +1,135 @@
+---
+title: Build and publish
+---
+
+import { Callout, Steps, Cards } from 'nextra/components'
+
+# Build and publish
+
+How a module repo becomes an image on GHCR. This page assumes a machine that
+has been through [Developer setup](/setup), or any arm64 host with Docker if
+the module does not need the GPU.
+
+## The module Dockerfile
+
+RAMMP-docker ships a template. Copy two files into your repo root:
+
+| From RAMMP-docker | To your repo |
+| --- | --- |
+| `templates/module.Dockerfile` | `Dockerfile` |
+| `templates/dockerignore.txt` | `.dockerignore` |
+
+Then edit the Dockerfile:
+
+<Steps>
+
+### Pin the base
+
+```dockerfile
+FROM ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+```
+
+`rammp-base` unless you need the GPU. Pin the full version, not `:humble`.
+The difference is on [Base images](/publishing/base-images).
+
+### Replace `<your_module>`
+
+The template copies your repo into `/module_ws/src/<your_module>/`. colcon
+finds every `package.xml` under `src/`, so your node package and any
+task-specific interface package in the repo both build.
+
+### Set the command
+
+```dockerfile
+CMD ["ros2", "launch", "<your_module>", "<your_module>.launch.py"]
+```
+
+Or a `ros2 run` target.
+
+</Steps>
+
+Your packages build into `/module_ws`, an overlay on the base's `/ros2_ws`.
+The build does not recompile the interface contract, and cannot ship a
+modified copy of it.
+
+### What happens at container start
+
+The entrypoint sources three layers in order, then runs the command:
+
+1. `/opt/ros/humble`, the ROS 2 underlay
+2. `/ros2_ws/install`, the interface contract from the base image
+3. `/module_ws/install`, your packages
+
+With `--network host --ipc host`, Cyclone DDS finds the host's real network
+interface and discovers nodes in other containers.
+
+## Build and test locally
+
+```bash
+docker build -t <your_module>:dev .
+docker run --rm --runtime nvidia --network host --ipc host <your_module>:dev
+```
+
+Drop `--runtime nvidia` for a `rammp-base` module. From a second terminal,
+`ros2 topic list` on the host lists what your node publishes.
+
+## Publish to GHCR
+
+Images live at `ghcr.io/rammp-org/<your-repo>`. CI in your repo builds and
+pushes them; nothing is pushed by hand in the normal flow.
+
+The pattern every module repo follows:
+
+| Event | CI does |
+| --- | --- |
+| Pull request | Build only |
+| Push to `main` | Build and push a moving `:main` tag |
+| Push a `v*` tag | Build and push the version tag |
+
+Two worked examples to copy from:
+
+- [rammp-suite-software](https://github.com/rammp-org/rammp-suite-software/blob/main/.github/workflows/build.yml):
+  the short form. `docker/metadata-action` derives branch, semver and sha
+  tags; `docker/build-push-action` builds for `linux/arm64` and pushes on
+  anything but a pull request.
+- [RAMMP-CuRobo](https://github.com/rammp-org/RAMMP-CuRobo/blob/main/.github/workflows/image.yml):
+  the long form, for an image that takes an hour to build. It refuses to
+  publish a `v*` tag that does not point at a commit on `main`.
+
+Both run on GitHub's arm64 runners, which are free for public repositories.
+
+To cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+<Callout type="info">
+  The deployment manifest pins an image tag. A `:main` tag moves with every
+  push, so pin a release tag there once the module is stable. See
+  [Deploy it](/publishing/deploy).
+</Callout>
+
+## Run it on the robot
+
+```bash
+docker run --rm --runtime nvidia --network host --ipc host \
+  ghcr.io/rammp-org/<your-repo>:<version>
+```
+
+| Flag | Why |
+| --- | --- |
+| `--runtime nvidia` | Injects the GPU driver. Required for any `rammp-cuda` image. |
+| `--network host` | DDS discovery. On a bridge network, nodes in other containers never find each other. |
+| `--ipc host` | Lets Cyclone use shared memory between containers. |
+
+Running it by hand is for checking the image. On the chair, sheppy runs it
+from the manifest with the same flags.
+
+## Next
+
+<Cards>
+  <Cards.Card title="Deploy it" href="/publishing/deploy" arrow />
+  <Cards.Card title="Before you open the PR" href="/publishing/checklist" arrow />
+</Cards>

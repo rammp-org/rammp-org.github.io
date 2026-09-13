@@ -1,0 +1,113 @@
+---
+title: Deploy it
+---
+
+import { Callout, Steps, Cards } from 'nextra/components'
+
+# Deploy it
+
+A published image does nothing until the deployment manifest names it.
+[rammp-deployments](https://github.com/rammp-org/rammp-deployments) holds one
+sheppy manifest per deployment, and adding your module means adding a node to
+it. This page walks through the entry the camera nodes use, since it is the
+shape every containerized module follows.
+
+The manifest format itself is documented under
+[sheppy → The manifest](/sheppy/manifest) and the
+[manifest reference](/sheppy/manifest-reference).
+
+## The node entry
+
+<Steps>
+
+### Pick the deployment
+
+One directory per deployment, for example `december_2026/`. Edit its
+`sheppy-manifest.yaml`.
+
+### Add a node with a real alternative
+
+```yaml
+nodes:
+  - name: scene_camera
+    description: Orbbec Gemini 336L, scene view
+    select: single
+    alternatives:
+      - id: gemini336l_docker
+        kind: docker
+        container:
+          image: ghcr.io/rammp-org/rammp-suite-software/gemini:main
+          privileged: true
+          network_mode: host
+          ipc: host
+          volumes:
+            - /dev:/dev
+          user: "1000:1000"
+          environment:
+            ROS_DOMAIN_ID: "0"
+            HOME: /tmp
+          command: ros2 launch orbbec_camera gemini_330_series.launch.py camera_name:=scene_camera
+        publishes:
+          - /scene_camera/color/image_raw
+          - /scene_camera/depth/image_raw
+          - /scene_camera/depth/points
+```
+
+| Field | Why it is there |
+| --- | --- |
+| `kind: docker` | sheppy runs the container and supervises it like any other process. |
+| `container.image` | Your image on GHCR. Pin a release tag once the module is stable; `:main` moves with every push. |
+| `network_mode: host`, `ipc: host` | DDS discovery and shared-memory transport, the same as `--network host --ipc host` by hand. |
+| `privileged`, `volumes: /dev:/dev` | Only for a node that talks to USB hardware. A pure software module omits both. |
+| `user` | Match the host user, so the DDS shared-memory segments the container creates stay readable by host subscribers. |
+| `publishes`, `subscribes` | Documentation only. sheppy stores them and shows them in the TUI, and never checks them against the live graph. List every topic anyway, so the manifest is the record of what runs and what consumes it. |
+
+A GPU module adds `runtime: nvidia` under `container`. The container fields
+sheppy accepts are listed in the
+[manifest reference](/sheppy/manifest-reference#docker-plugin).
+
+### Add a mock alternative
+
+Every node carries a mock alongside the real one, so a profile that selects
+only mocks runs on a workstation with nothing plugged in. It goes in the same
+`alternatives:` list as the real one:
+
+```yaml
+      - id: scene_camera_mock
+        kind: process
+        command: "bash -lc 'source /opt/ros/humble/setup.bash && ros2 topic pub -r 10 /scene_camera/color/image_raw sensor_msgs/msg/Image \"{}\"'"
+        publishes:
+          - /scene_camera/color/image_raw
+```
+
+The mock publishes empty messages on the right topic at the right type. It is
+enough to develop wiring against. It is not a simulation.
+
+### Bring it up
+
+On the chair, from the deployment directory:
+
+```bash
+sheppy up <profile>
+sheppy status
+```
+
+Your node's row reads `running` with the alternative you selected. The
+keys for launching one node at a time from the TUI are in
+[sheppy → Getting started](/sheppy/getting-started#the-90-second-walkthrough).
+
+</Steps>
+
+<Callout type="info">
+  Container definitions are inline in the manifest rather than a `compose:`
+  reference. sheppy resolves a compose file relative to the manifest, so a
+  reference would mean carrying a second copy of the file to drift against.
+  Inline blocks are not variable-interpolated, so spell every value out.
+</Callout>
+
+## Next
+
+<Cards>
+  <Cards.Card title="Before you open the PR" href="/publishing/checklist" arrow />
+  <Cards.Card title="The manifest" href="/sheppy/manifest" arrow />
+</Cards>

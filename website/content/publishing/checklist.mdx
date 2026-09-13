@@ -1,0 +1,55 @@
+---
+title: Before you open the PR
+---
+
+import { Cards } from 'nextra/components'
+
+# Before you open the PR
+
+Run through this before asking for review. Most review comments are one of
+these.
+
+## The repo
+
+- [ ] `Dockerfile` and `.dockerignore` copied from the RAMMP-docker templates
+- [ ] `FROM` pins a full base image version, not `:humble`
+- [ ] `rammp-base` unless the node needs the GPU
+- [ ] If `FROM rammp-cuda`, `torch` and `torchvision` are not in `requirements.txt`
+- [ ] Message types come from `rammp-interfaces-ros2`. No new type for something that already exists there.
+- [ ] Task-specific interface packages live in this repo, not in the shared one
+
+## The image
+
+- [ ] `docker build` succeeds on an arm64 host
+- [ ] CI builds on pull requests and pushes on `main` and on `v*` tags
+- [ ] Image published to `ghcr.io/rammp-org/<your-repo>`
+
+## The deployment
+
+- [ ] Node entry added to the `rammp-deployments` manifest
+- [ ] A mock alternative next to the real one
+- [ ] `publishes` and `subscribes` list every topic the module publishes and consumes
+- [ ] `sheppy up <profile>` brings it to `running` from a clean state
+
+## The docs
+
+- [ ] `docs/` exists and has an `index.mdx`
+- [ ] Every folder under `docs/` has a `_meta.js`
+- [ ] Entry added to `sources.yml` in this site's repo, and the matching slug to `website/content/_meta.js`
+- [ ] Internal links are site paths, not `https://rammp-org.github.io/...` URLs
+- [ ] `npm run build && npm test && npm run check:links && npm run check:search` pass locally
+- [ ] Row added to the [Modules registry](/modules)
+
+## The pull request
+
+- [ ] Branch follows the [Git workflow](/development/git-workflow): forked from `dev`, latest `dev` merged in, targets `dev`
+- [ ] Description says what changed, how it was tested, and what was observed
+- [ ] `Closes #<issue>` in the description
+- [ ] Reviewer assigned
+
+## Back to
+
+<Cards>
+  <Cards.Card title="Publishing a module" href="/publishing" arrow />
+  <Cards.Card title="Git workflow" href="/development/git-workflow" arrow />
+</Cards>

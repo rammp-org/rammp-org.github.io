@@ -2,22 +2,16 @@
 title: RAMMP Gen 1.5
 ---
 
-import { Callout } from 'nextra/components'
-
-{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
-    "> **Fill in** …" blockquote marks a whole section still to write.
-
-    Image placeholders: drop the photo in website/public/ and replace the
+{/* Image placeholders: drop the photo in website/public/ and replace the
     <figure> block with ![alt](/filename.jpg). Prefer a photo of our actual
     hardware over a vendor product shot. */}
 
 # RAMMP Gen 1.5
 
 Gen 1.5 is the current RAMMP chair: the hardware every module on this site is
-built against. This page is a tour of what is on it — the wheelchair base, the
-Kinova arm and its wrist attachment, the compute, and the sensor suite. Setting
-a Jetson up to develop against it is [Developer setup](/setup); the software
-interfaces to each part are under [Interfaces](/interfaces).
+built against. The software it runs is on
+[Software versions & core repos](/software). Setting a Jetson up to develop
+against it is [Developer setup](/setup).
 
 ## The wheelchair base
 
@@ -37,7 +31,11 @@ interfaces to each part are under [Interfaces](/interfaces).
   </figcaption>
 </figure>
 
-The RAMMP base was originally the [MEBot](https://www.herl.pitt.edu/mebot), or Mobility Enhancement Robotic Wheelchair, created at HERL. It is capable of actuating its caster wheels and drive wheels, which allows it to autonomously climb curbs and self-level the seat on uneven terrain. Sensors in the base include joint encoders, load cells, and an IMU.
+The RAMMP base is the [MEBot](https://www.herl.pitt.edu/mebot), the Mobility
+Enhancement Robotic Wheelchair created at HERL. It actuates its caster wheels
+and drive wheels independently, which lets it climb curbs and level the seat on
+uneven terrain. Sensors in the base include joint encoders, load cells, and an
+IMU.
 
 ## The Kinova Gen3 arm
 
@@ -57,15 +55,14 @@ The RAMMP base was originally the [MEBot](https://www.herl.pitt.edu/mebot), or M
   </figcaption>
 </figure>
 
-RAMMP uses a [Kinova Gen3](https://www.kinovarobotics.com/product/gen3-robots) 7 degree-of-freedom assistive robotic manipulator to perform manipulation tasks. 
+RAMMP uses a [Kinova Gen3](https://www.kinovarobotics.com/product/gen3-robots)
+7 degree-of-freedom arm for manipulation tasks. The ROS 2 interface to it is
+documented under [Controlling the arm](/kinova-gen3-ros2).
 
 ## Kinova Wrist Puck Attachment
 
-<Callout type="warning">
-  This section is unfinished, more information is to come
-</Callout>
-
-Kinova developed a custom wrist attachment that exposes I/O that runs through the arm.
+Kinova developed a custom wrist attachment that exposes I/O routed through the
+arm.
 
 ## Compute
 
@@ -79,39 +76,25 @@ module you contribute — runs on one NVIDIA Jetson.
 | Memory | 64 GB, shared between CPU and GPU |
 | Storage | WD_BLACK SN7100 1 TB NVMe SSD (`WDS100T4X0E`), M.2 2280, PCIe Gen4, in the dev kit's M.2 Key M slot |
 
-The GPU is why the [`rammp-cuda`](/contributing/how-to#rammp-cuda) base image
+The GPU is why the [`rammp-cuda`](/publishing/base-images#rammp-cuda) base image
 exists. The NVMe is there because the dev kit's 64 GB of eMMC is not enough:
 `rammp-cuda` alone is several gigabytes, every module is its own image on top
 of it, and during an upgrade you hold more than one tag of each.
 
-### Software baseline
-
-| | |
-| --- | --- |
-| JetPack | 6.1 or newer — _[the exact version on the chair]_. **Not 6.0**: its L4T r36.2/r36.3 driver predates the CUDA 12.6 runtime in `rammp-cuda`. |
-| Jetson Linux (L4T) | r36.4.x |
-| OS | Ubuntu 22.04, arm64 |
-| CUDA | 12.6 — the driver comes from the host's L4T, the runtime libraries ship inside the image |
-| Kernel | Linux 5.15 with the PREEMPT_RT patch set — `5.15-rt-tegra` |
-| Docker | Docker Engine _[pinned version]_, with the NVIDIA Container Runtime that JetPack installs |
-
 ### Real-time
 
-Two things on the chair have hard deadlines. The Kinova Gen3 low-level driver
-closes a 1 kHz torque loop over Ethernet, and a missed cycle trips the arm's
-watchdog and faults it. _[The base actuation loop and its rate.]_ Both need
+The Kinova Gen3 low-level driver closes a 1 kHz torque loop over Ethernet. A
+missed cycle trips the arm's watchdog and faults the arm. The base actuation
+loop has a deadline of its own. Both need
 bounded wake-up latency, which the stock JetPack kernel does not give, so the
 Jetson runs a PREEMPT_RT kernel with one core isolated for the control loop.
-The settings that make that hold, and how to apply them, are in
+The kernel version is on [Software versions](/software#versions). The settings
+that make it hold, and how to apply them, are in
 [Developer setup](/setup#the-jetson).
 
 ## Sensor Suite
 
-<Callout type="warning">
-  The sensor suite is not final, it is subject to change as we continue to explore options.
-</Callout>
-
-This is the current planned setup:
+The sensor suite is not final. This is the current planned setup:
 
 | Sensor | Count | Where | Purpose |
 | --- | --- | --- | --- |

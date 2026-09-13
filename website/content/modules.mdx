@@ -1,0 +1,25 @@
+---
+title: Modules registry
+---
+
+# Modules registry
+
+Modules built for RAMMP: what you clone to add a capability, as opposed to
+the [core repos](/software#core-repositories) you clone to run the robot. Each is its own repository and ships as its own image.
+
+This list is maintained by hand. When you publish a module, add a row in a
+pull request against
+[this page](https://github.com/rammp-org/rammp-org.github.io/edit/main/website/content/modules.mdx).
+
+| Module | What it does | Runs on | Interfaces | Maintainer |
+| --- | --- | --- | --- | --- |
+| [RAMMP-CuRobo](https://github.com/rammp-org/RAMMP-CuRobo) | GPU motion planning for the Kinova Gen3 with NVIDIA cuRobo. A goal pose or joint configuration in, a collision-free time-parameterized joint trajectory out. It never moves the arm; execution belongs to the caller. | Jetson, `rammp-cuda` | Serves `rammp_curobo_interfaces`: `PlanToPose`, `PlanToJoints`, `SetWorld`. Called by `kinova-gen3-ros2`'s `go_to_*` actions. | |
+| [kinova-quest-teleop](https://github.com/rammp-org/kinova-quest-teleop) | VR teleoperation of the Gen3 arm and Robotiq 2F-85 gripper from a Meta Quest controller. Reads controller poses, maps them to end-effector targets, enforces safety limits, and streams targets over UDP to the low-level driver. | A Mac with the headset attached. Talks to the Jetson over UDP. | UDP to `kinova-gen3-driver`'s teleop socket server, not ROS 2 | |
+
+Columns:
+
+| Column | Meaning |
+| --- | --- |
+| Runs on | Where the container or process runs, and which base image if it is a RAMMP image |
+| Interfaces | What it publishes, subscribes to, serves, or calls |
+| Maintainer | Who to ask. Blank where the repo does not say. |

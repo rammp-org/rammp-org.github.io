@@ -1,0 +1,95 @@
+---
+title: Common
+---
+
+# Common
+
+`rammp_common_interfaces`. Two things no single subsystem owns: the
+emergency stop, and the arbitration protocol for taking control of a
+resource. Every arbitrated resource on the robot, the arm today and the base
+when it lands, runs its own arbitration server speaking this one protocol on
+its own namespace.
+
+## Emergency stop
+
+### `EStop` (msg)
+
+Broadcast on `/estop`. Any node may publish it. Engaging is never age-checked;
+clearing is, so a stale message can never release a stop.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | An all-zero stamp means unstamped and is accepted |
+| `engaged` | `bool` | `true` engages the stop, `false` clears it |
+| `source` | `string` | Who published it, for the log |
+| `reason` | `string` | Free text, for the log |
+
+It is not a `std_msgs/Bool` because the stamp is load-bearing.
+
+## Arbitration
+
+Who may command a resource right now. A client acquires control, receives a
+token, and puts that token on every command the resource arbitrates. Engaging
+the e-stop and every new acquire both clear ownership and invalidate
+outstanding tokens.
+
+### `AcquireControl` (srv)
+
+Acquire control of a resource. This seizes: if another owner holds it, the
+call succeeds anyway, halting their in-flight motion and settling their
+outstanding goals. By operational contract only the task orchestrator calls
+it.
+
+| | Field | Type | Meaning |
+| --- | --- | --- | --- |
+| Request | `owner_id` | `string` | Human-readable label. Mirrors `sender_id` on arbitrated goals. |
+| Response | `accepted` | `bool` | |
+| | `token` | `uint8[16]` | The capability. Put it on every command this resource arbitrates. |
+| | `generation` | `uint64` | |
+| | `message` | `string` | |
+
+### `ReleaseControl` (srv)
+
+Release control you hold. Refused unless the token matches the current
+owner.
+
+| | Field | Type |
+| --- | --- | --- |
+| Request | `token` | `uint8[16]` |
+| Response | `released` | `bool` |
+| | `message` | `string` |
+
+### `RevokeControl` (srv)
+
+Operator override: take the resource from whoever holds it. Carries no token,
+because it is the recovery path for a crashed owner and ownership has no
+lease.
+
+| | Field | Type |
+| --- | --- | --- |
+| Request | `reason` | `string` |
+| Response | `revoked` | `bool` |
+| | `message` | `string` |
+
+### `ControlStatus` (msg)
+
+Published on change, latched, so a client that starts late learns the
+current state immediately. One publisher per arbitrated resource.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | |
+| `arbitration_enabled` | `bool` | `false` means tokens are ignored. A launch-time parameter. |
+| `estopped` | `bool` | Latched. Nothing is admitted while true. |
+| `owned` | `bool` | Whether anyone holds the resource |
+| `owner_id` | `string` | Empty if none |
+| `generation` | `uint64` | Bumps on every grant. A client compares it to detect that it was dispossessed. |
+| `rejected_count` | `uint64` | Commands refused since start |
+
+## Where the arm serves these
+
+The arm driver exposes them as `/estop`, `/control_status`,
+`/acquire_control`, `/release_control` and `/revoke_control`. QoS and rates
+are in the [arm interface reference](/kinova-gen3-ros2/interface). That
+reference still names the types under the driver's own
+`kinova_gen3_interfaces` package.

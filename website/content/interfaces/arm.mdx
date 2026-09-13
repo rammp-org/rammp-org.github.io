@@ -1,0 +1,208 @@
+---
+title: Arm
+---
+
+# Arm
+
+`rammp_arm_interfaces`. Commanding and observing an arm. Four ways to drive
+it, in increasing order of how directly you command it, plus the gripper and
+the arm's state.
+
+| Tier | You send | Types |
+| --- | --- | --- |
+| Planned moves | A destination. The planner finds a collision-free trajectory and the driver executes it. | `GoToEEPose`, `GoToJointConfig`, `GoToPreset` |
+| Trajectory execution | The waypoints. Tolerances guard the execution. | `ExecuteJointTrajectory` |
+| Setpoint streaming | Setpoints at rate, on channels the driver hands you | `OpenStream`, `CloseStream`, `ListControllers`, `JointSetpoint`, `PoseSetpoint`, `TwistSetpoint`, `StreamStatus` |
+| Gripper | An absolute gripper command | `GripperSetpoint`, `GripperState` |
+
+Every command carries a `token` from
+[`AcquireControl`](/interfaces/common#acquirecontrol-srv). All-zeros means
+none. The driver validates it on every message.
+
+Topic names, QoS and rates as the arm driver serves them are in the
+[arm interface reference](/kinova-gen3-ros2/interface). That reference still
+names the types under the driver's own `kinova_gen3_interfaces` package, and
+lists a `/setpoint/wrench` channel that has no type here yet. This page is
+the types in `rammp-interfaces-ros2` v1.0.0.
+
+## Planned moves
+
+Three actions with the same result and feedback. The goal names a
+destination; the planner plans, the driver executes.
+
+| Action | Goal |
+| --- | --- |
+| `GoToEEPose` | `target` (`geometry_msgs/PoseStamped`). `frame_id` must be `base_link`. |
+| `GoToJointConfig` | `target_joints` (`float64[7]`), radians, `joint_1` to `joint_7` |
+| `GoToPreset` | `preset_name` (`string`), from the driver's preset registry |
+
+Each goal also carries `sender_id` (`string`) and `token` (`uint8[16]`).
+
+| | Field | Type | Meaning |
+| --- | --- | --- | --- |
+| Result | `error_code` | `int32` | See the table below |
+| | `error_string` | `string` | |
+| | `final_error` | `JointTrajectoryPoint` | Joint-space final error |
+| Feedback | `phase` | `string` | `planning` or `executing` |
+| | `planner_state` | `string` | The planner's state, relayed while planning |
+| | `fraction_complete` | `float32` | Execution progress. 0 while planning. |
+| | `actual` | `JointTrajectoryPoint` | Live measured joints during execution |
+
+## Trajectory execution
+
+### `ExecuteJointTrajectory` (action)
+
+You supply the trajectory. Path and goal tolerances abort on divergence.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `trajectory` | `trajectory_msgs/JointTrajectory` | |
+| `path_tolerance` | `control_msgs/JointTolerance[]` | |
+| `goal_tolerance` | `control_msgs/JointTolerance[]` | |
+| `goal_time_tolerance` | `builtin_interfaces/Duration` | |
+| `control_mode` | `uint8` | `0` position, `1` impedance |
+| `preemption` | `uint8` | `0` queue, `1` latest wins |
+| `gains` | `JointImpedanceGains` | Used only when `control_mode` is impedance |
+| `sender_id` | `string` | |
+| `token` | `uint8[16]` | |
+
+Result: `error_code`, `error_string`, `final_error`. Feedback: `header`,
+`joint_names`, `desired`, `actual`, `error`, `fraction_complete`.
+
+### `JointImpedanceGains` (msg)
+
+| Field | Type |
+| --- | --- |
+| `kq` | `float64[7]` |
+| `zeta` | `float64` |
+| `torque_limit` | `float64[7]` |
+
+### Error codes
+
+Shared by every action above.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | `SUCCESSFUL` |
+| `-1` | `INVALID_GOAL` |
+| `-4` | `PATH_TOLERANCE_VIOLATED` |
+| `-5` | `GOAL_TOLERANCE_VIOLATED` |
+| `-6` | `PREEMPTED` |
+| `-7` | `PLANNING_FAILED` |
+| `-8` | `NOT_AUTHORIZED` |
+| `-9` | `HALTED` |
+
+## Setpoint streaming
+
+Open a session on a controller, publish setpoints on the channels it returns,
+close it. The controller and control mode are fixed for the session; to
+change them, close and reopen.
+
+Call `ListControllers` first and let DDS discovery settle before opening.
+Otherwise the first setpoints go nowhere and the session expires.
+
+### `ListControllers` (srv)
+
+No request. Responds with `controllers` (`ControllerCapability[]`).
+
+### `ControllerCapability` (msg)
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `string` | For example `joint_impedance` |
+| `channels` | `string[]` | Topics under `/setpoint/` this controller reads |
+| `available` | `bool` | Computed live, never declared |
+
+### `OpenStream` (srv)
+
+| | Field | Type | Meaning |
+| --- | --- | --- | --- |
+| Request | `controller` | `string` | |
+| | `timeout_s` | `float64` | Must be greater than 0. An unbounded stream has no safe stop. |
+| | `token` | `uint8[16]` | |
+| Response | `accepted` | `bool` | |
+| | `channels` | `string[]` | Where to publish. The driver tells you. |
+| | `error_code` | `int32` | `0`, or `-10` `STREAM_REJECTED` |
+| | `message` | `string` | |
+
+### `CloseStream` (srv)
+
+Request `token` (`uint8[16]`). Response `closed` (`bool`), `message`
+(`string`).
+
+### `JointSetpoint` (msg)
+
+One shape, three meanings. The topic says which: radians on
+`/setpoint/joint_position`, rad/s on `/setpoint/joint_velocity`, N·m on
+`/setpoint/joint_torque`. Always absolute, never a delta. Dropping an
+intermediate setpoint is correct, which is why these topics are best-effort.
+
+| Field | Type |
+| --- | --- |
+| `values` | `float64[7]` |
+| `token` | `uint8[16]` |
+
+### `PoseSetpoint` (msg)
+
+Target tool pose in the base frame. `pose` (`geometry_msgs/Pose`), `token`.
+
+### `TwistSetpoint` (msg)
+
+Target tool twist in the base frame. `twist` (`geometry_msgs/Twist`), `token`.
+
+### `StreamStatus` (msg)
+
+What the streaming tier is doing. Latched.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | |
+| `open` | `bool` | |
+| `controller` | `string` | Empty when closed |
+| `channels` | `string[]` | Topics the open controller reads |
+| `timeout_s` | `float64` | |
+| `rejected_count` | `uint64` | Setpoints the session refused: wrong channel, or closed. Token failures are counted in `ControlStatus` instead. |
+
+## Gripper
+
+### `GripperSetpoint` (msg)
+
+An absolute command. Rides the arm's token: one machine, one holder. Not
+sticky: every message sets all three fields, and a message carrying only
+`position` sets speed and force to their defaults.
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `position` | `float32` | | `0` open to `1` closed |
+| `speed` | `float32` | `1.0` | Fraction of maximum closing speed. `1.0` is the maximum. |
+| `force` | `float32` | `0.5` | A ceiling on motor current, not a force setpoint. The gripper closes at `speed` toward `position` and stalls at this limit. |
+| `token` | `uint8[16]` | | |
+
+There is no "let go". Releasing control does not open the gripper; the last
+command stays latched. To open, command `position` `0`.
+
+### `GripperState` (msg)
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `header` | `std_msgs/Header` | |
+| `position` | `float32` | `0` open to `1` closed |
+| `effort` | `float32` | `0` to `1`, current over 1 A. Not newtons. A sustained grasp reads small, about `0.05`, because the current settles after the fingers close. |
+| `current` | `float32` | Amps, raw |
+| `present` | `bool` | `false` when no gripper is attached or no controller is wired |
+
+## Arm state
+
+### `EeState` (msg)
+
+Cartesian state of the tool, the sibling of `/joint_states`. `pose` is
+`fk(q)` and `twist` is `J(q)·qd`, computed together from the same feedback
+sample and the same URDF the planner uses, so they agree by construction.
+Frame is world-aligned at the tool: both parts are expressed in `base_link`
+orientation. There is no wrench.
+
+| Field | Type |
+| --- | --- |
+| `header` | `std_msgs/Header` |
+| `pose` | `geometry_msgs/Pose` |
+| `twist` | `geometry_msgs/Twist` |

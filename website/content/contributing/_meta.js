@@ -1,7 +1,7 @@
 export default {
-  index: 'Overview',
-  'how-to': 'How-to guide',
-  'git-workflow': 'Git workflow',
-  'rammp-interfaces': 'RAMMP-interfaces spec',
-  checklist: 'Before you open the PR'
+  index: 'Contributing',
+  'how-to': { display: 'hidden' },
+  'git-workflow': { display: 'hidden' },
+  checklist: { display: 'hidden' },
+  'rammp-interfaces': { display: 'hidden' }
 }

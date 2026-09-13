@@ -1,0 +1,124 @@
+---
+title: Base images
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Base images
+
+Every module image builds `FROM` one of two base images published by
+[RAMMP-docker](https://github.com/rammp-org/RAMMP-docker). They fix the ROS 2
+version, the DDS middleware, and the interface contract, so two modules built
+independently still speak the same types.
+
+Both images are `linux/arm64` only. There is no amd64 variant.
+
+## The two images
+
+| | `rammp-base` | `rammp-cuda` |
+| --- | --- | --- |
+| Contains | ROS 2 Humble, Cyclone DDS, `rammp-interfaces-ros2` compiled in | Everything in `rammp-base`, plus the CUDA 12.6 runtime libraries and CUDA-enabled PyTorch |
+| Use for | Hardware drivers, sensor nodes, anything that does not need the GPU | Nodes that need the GPU |
+| Runs on | Any arm64 host with Docker: a Jetson, an ARM Mac in an arm64 Linux VM, an AWS Graviton instance | A Jetson Orin on JetPack 6.2.1, with `--runtime nvidia` |
+| Size | Small | Several gigabytes larger |
+
+### `rammp-base`
+
+ROS 2 Humble with Cyclone DDS selected as the RMW, and the interface contract
+from [rammp-interfaces-ros2](/interfaces) built into
+`/ros2_ws`. Pick this unless your node needs the GPU.
+
+### `rammp-cuda`
+
+Built `FROM rammp-base`, so the two share one lineage and the interface
+contract is identical by construction. Adds the CUDA runtime libraries and
+PyTorch from the Jetson wheel index.
+
+The image ships the CUDA runtime but no driver. The Jetson's container runtime
+injects `libcuda.so` at start, which is why every `rammp-cuda` container runs
+with `--runtime nvidia`. Without it, `torch.cuda.is_available()` is `False`.
+
+<Callout type="warning">
+  If you build `FROM rammp-cuda`, remove `torch` and `torchvision` from your
+  module's `requirements.txt`. Reinstalling them from PyPI replaces the
+  Jetson-specific wheels with ones that cannot drive the GPU.
+</Callout>
+
+## Tags
+
+Release tags are `<semver>-jp<N>`, for example `rammp-cuda:1.0.0-jp6`.
+
+| Part | Tracks | Changes when |
+| --- | --- | --- |
+| semver | The interface contract and the base setup | Major for a breaking contract change, minor for an additive one, patch for base plumbing |
+| `-jp<N>` | The JetPack generation the image runs on | The robot moves to a new JetPack generation. `jp6` is JetPack 6 on L4T r36. |
+
+Pin the full version in your module's `FROM`. The floating `:humble` tag
+always points at the latest release, and Docker will reuse a stale cached
+copy of it without telling you.
+
+The exact CUDA, cuDNN, torch, and interface versions in an image are OCI
+labels, not part of the tag:
+
+```bash
+docker inspect --format '{{json .Config.Labels}}' \
+  ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+```
+
+## Pull them
+
+```bash
+docker pull ghcr.io/rammp-org/rammp-base:1.0.0-jp6
+docker pull ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+```
+
+The current pinned version is on
+[Software versions](/software#versions).
+
+## How a base image release is cut
+
+You do not need this to build a module.
+
+<Steps>
+
+### Tag a release
+
+A contract or base setup change bumps `VERSION` in the Makefile, and someone
+pushes a `v*` tag:
+
+```bash
+git tag v1.0.0-jp6
+git push origin v1.0.0-jp6
+```
+
+### CI derives the version
+
+The workflow runs on GitHub's native arm64 runners. A `v*` tag becomes the
+version and sets `publish=true`. Any other ref gets `0.0.0-<sha>` and
+`publish=false`, so an untagged push never reaches the registry. A tag that
+does not match `v<semver>-jp<N>` fails the build.
+
+### Both images build and are smoke-tested
+
+`make base cuda` builds both with plain `docker build`, then `make test` runs
+`scripts/smoke-test.sh` against each. The script checks the architecture,
+the selected RMW, and that every interface type imports. On the runner it
+skips the GPU checks. On the Jetson it also confirms CUDA runs and that two
+containers discover each other over DDS.
+
+### Only a tag publishes
+
+On a `v*` tag, `make push` tags both images as `<version>` and `:humble` and
+pushes them to `ghcr.io/rammp-org`.
+
+</Steps>
+
+To build them by hand on the Jetson instead:
+
+```bash
+git clone https://github.com/rammp-org/RAMMP-docker.git
+cd RAMMP-docker
+make base cuda
+make test
+docker login ghcr.io && make push
+```

@@ -4,20 +4,16 @@ title: Developer setup
 
 import { Callout, Steps, Cards } from 'nextra/components'
 
-{/* Drafting note: _[bracketed italics]_ marks a phrase to replace, and a
-    "> **Fill in** …" blockquote marks a whole section still to write. Inside
-    code blocks, <angle-brackets> mark the values to replace. */}
-
 # Developer setup
 
-This page is for software developers. It takes a Jetson from a blank board to
-a machine that runs the RAMMP system and builds modules for it: flash it, make
-it real-time, install Docker and sheppy, and bring the system up once. Each
-step says what has to be true and links to the document that walks you
-through it; it does not repeat NVIDIA's or Docker's instructions.
+This page takes a Jetson from a blank board to a machine that runs the RAMMP
+system and builds modules for it: flash it, make it real-time, install Docker
+and sheppy, and bring the system up once. Each step says what has to be true
+and links to the document that walks you through it; it does not repeat
+NVIDIA's or Docker's instructions.
 
-What the board is and the software it has to run are on the
-[RAMMP Gen 1.5](/platform#compute) page. This page is the procedure.
+The board itself is described on [RAMMP Gen 1.5](/platform#compute). The
+versions it has to run are on [Software versions](/software#versions).
 
 ## Before you start
 
@@ -57,9 +53,12 @@ Docker's `data-root` by hand.
 
 From the x86 host, with
 [SDK Manager](https://developer.nvidia.com/sdk-manager). Pick JetPack
-_[the version on the chair]_ — 6.1 or newer, never 6.0 — and NVMe as the
-storage target, so the root filesystem and Docker's image store live on the
-drive from the start —
+**6.2.1**, which is Jetson Linux r36.4.7, and NVMe as the storage target, so
+the root filesystem and Docker's image store live on the drive from the
+start. Do not pick a newer JetPack: NVIDIA ships a prebuilt PREEMPT_RT kernel
+for r36.4 and not for r36.5, and the next step depends on it. A board already
+on JetPack 6.0 must be reflashed: its driver predates the CUDA 12.6 runtime in
+`rammp-cuda` —
 [Jetson Linux quick start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html).
 
 ### Install the real-time kernel
@@ -75,7 +74,7 @@ Reboot, then confirm —
 [Real-Time Kernel Using OTA Update](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Kernel/KernelCustomization.html#real-time-kernel-using-ota-update).
 
 ```bash
-head -1 /etc/nv_tegra_release   # "# R36 (release), REVISION: 4.x" or later
+head -1 /etc/nv_tegra_release   # "# R36 (release), REVISION: 4.7"
 uname -r                        # ends in -rt-tegra
 cat /sys/kernel/realtime        # 1
 ```
@@ -133,7 +132,7 @@ driver's
 | Power model | MAXN — all cores, no power cap | `sudo nvpmodel -q` |
 | CPU governor | `performance` on the RT core | `cat /sys/devices/system/cpu/cpu11/cpufreq/scaling_governor` |
 | Clocks | locked at maximum | `sudo jetson_clocks --show` |
-| Core isolation | at least one core reserved for the control loop | `grep -o 'isolcpus=[^ ]*' /proc/cmdline` |
+| Core isolation | core 11 reserved for the control loop | `grep -o 'isolcpus=[^ ]*' /proc/cmdline` → `isolcpus=11` |
 | Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
 | RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
 | Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
@@ -146,7 +145,7 @@ sudo apt install rt-tests
 sudo taskset -c 11 cyclictest -m -t1 -p 90 -i 1000 -D 60
 ```
 
-_[the max latency you accept before trusting the board]_ —
+The maximum latency to accept, and what to look for in the output, are in
 [rt-tuning §D](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#d-validate--measure-dont-assume).
 
 </Steps>
@@ -154,9 +153,9 @@ _[the max latency you accept before trusting the board]_ —
 ## Docker
 
 Every module runs as a container, and the base images assume the host's
-Docker matches the chair's. Install Docker Engine **_[pinned version]_** —
-not the latest — from Docker's apt repository; their guide has a section on
-installing a specific version:
+Docker matches the chair's. Install Docker Engine **27.5.1**, the version on
+[Software versions](/software#versions), from Docker's apt repository. Their
+guide has a section on installing a specific version:
 [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 Then add yourself to the `docker` group so it runs without `sudo`:
 [Linux post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/).
@@ -172,7 +171,24 @@ docker run --rm --runtime nvidia --network host --ipc host \
 ```
 
 What each flag is for, and how modules are built on that image, is in the
-[how-to guide](/contributing/how-to#run-it-on-the-robot).
+[Build and publish](/publishing/build-and-publish#run-it-on-the-robot) page.
+
+## Shell environment
+
+Two variables belong in every shell on the Jetson, and in the shell you SSH
+in from. Run the line below on both machines. `RMW_IMPLEMENTATION` selects Cyclone DDS, which the base images run;
+a host shell on the default RMW only partly discovers the containers.
+`COLORTERM` gives the sheppy TUI its full palette over SSH, which does not
+forward it.
+
+```bash
+for rc in ~/.bashrc ~/.zshrc; do [ -f "$rc" ] && ! grep -q RMW_IMPLEMENTATION "$rc" && printf '\nexport RMW_IMPLEMENTATION=rmw_cyclonedds_cpp\nexport COLORTERM=truecolor\n' >> "$rc"; done; true
+```
+
+It appends to whichever of the two files exist, once. Open a new shell
+afterwards. The Cyclone RMW package itself comes with the
+host ROS 2 install: `sudo apt install ros-humble-rmw-cyclonedds-cpp` if
+`ros2 doctor` reports it missing.
 
 ## sheppy
 
@@ -198,6 +214,6 @@ are in [the 90-second walkthrough](/sheppy/getting-started#the-90-second-walkthr
 ## Next
 
 <Cards>
-  <Cards.Card title="Contributing" href="/contributing" arrow />
-  <Cards.Card title="RAMMP Gen 1.5" href="/platform" arrow />
+  <Cards.Card title="Development flow" href="/development" arrow />
+  <Cards.Card title="Publishing a module" href="/publishing" arrow />
 </Cards>

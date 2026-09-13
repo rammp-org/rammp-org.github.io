@@ -29,7 +29,7 @@ export default async function RootLayout({ children }) {
           footer={footer}
           editLink={false}
           feedback={{ content: false }}
-          sidebar={{ defaultMenuCollapseLevel: 2 }}
+          sidebar={{ defaultMenuCollapseLevel: 1 }}
         >
           {children}
         </Layout>

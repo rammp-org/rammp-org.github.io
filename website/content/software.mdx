@@ -1,0 +1,41 @@
+---
+title: Software versions & core repos
+---
+
+# Software versions & core repos
+
+The versions every module is built against, and the repositories you clone to
+stand up the robot and a development environment. Modules built on top of
+this stack are listed in the [Modules registry](/modules).
+
+## Versions
+
+| | Version | Links |
+| --- | --- | --- |
+| JetPack | 6.2.1 | [Developer setup](/setup#the-jetson) |
+| Jetson Linux (L4T) | r36.4.7 | The newest release NVIDIA ships a prebuilt PREEMPT_RT kernel for |
+| OS | Ubuntu 22.04.5, arm64 | |
+| Kernel | Linux 5.15, PREEMPT_RT | Why: [RAMMP Gen 1.5](/platform#real-time). How: [Developer setup](/setup#the-jetson). |
+| CUDA | 12.6.11 | |
+| Docker Engine | 27.5.1 | [Developer setup](/setup#docker) |
+| ROS 2 | Humble | |
+| RMW | Cyclone DDS | [Interface versioning](/interfaces#versioning) |
+| Python | 3.10.12 | |
+| `rammp-base`, `rammp-cuda` | 1.0.0-jp6 | [Base images](/publishing/base-images) |
+| `rammp-interfaces-ros2` | v1.0.0 | [Interfaces](/interfaces) |
+| sheppy | `main` | [Install](/sheppy/getting-started#install) |
+
+## Core repositories
+
+Clone these to run the robot and to develop against it. Each is a separate
+repository under [rammp-org](https://github.com/rammp-org).
+
+| Repository | What it is | Who depends on it |
+| --- | --- | --- |
+| [rammp-deployments](https://github.com/rammp-org/rammp-deployments) | The sheppy manifest for each robot deployment. One directory per deployment, such as `december_2026/`. Says which modules run on the chair and how. | Anyone bringing the chair up. Every module, once it is deployed. |
+| [RAMMP-docker](https://github.com/rammp-org/RAMMP-docker) | The `rammp-base` and `rammp-cuda` base images, the module Dockerfile template, and the smoke test. | Every module image. |
+| [rammp-interfaces-ros2](https://github.com/rammp-org/rammp-interfaces-ros2) | The shared ROS 2 message, service and action definitions. Two packages: `rammp_common_interfaces` and `rammp_arm_interfaces`. | Every module, through the base image. |
+| [sheppy](https://github.com/rammp-org/sheppy) | Launches and supervises every module on the chair from one manifest. Documented under [sheppy](/sheppy). | Anyone running the system. |
+| [kinova-gen3-driver](https://github.com/rammp-org/kinova-gen3-driver) | The C++ low-level driver for the Kinova Gen3 arm. Owns the 1 kHz real-time control loop. | `kinova-gen3-ros2`. |
+| [kinova-gen3-ros2](https://github.com/rammp-org/kinova-gen3-ros2) | The ROS 2 front end to the arm driver. Documented under [Controlling the arm](/kinova-gen3-ros2). | Anything that moves the arm. |
+| [rammp-suite-software](https://github.com/rammp-org/rammp-suite-software) | Driver containers for the chair's cameras: the Orbbec Gemini 336L scene camera and the Intel RealSense D405 wrist camera. | Perception modules. The deployment manifest. |
