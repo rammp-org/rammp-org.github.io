@@ -60,7 +60,7 @@ nodes:
 | `network_mode: host`, `ipc: host` | DDS discovery and shared-memory transport, the same as `--network host --ipc host` by hand. |
 | `privileged`, `volumes: /dev:/dev` | Only for a node that talks to USB hardware. A pure software module omits both. |
 | `user` | Match the host user, so the DDS shared-memory segments the container creates stay readable by host subscribers. |
-| `publishes` | Documentation only. sheppy stores it and shows it in the TUI, and never checks it against the live graph. List every topic anyway, so the manifest is the record of what runs. |
+| `publishes`, `subscribes` | Documentation only. sheppy stores them and shows them in the TUI, and never checks them against the live graph. List every topic anyway, so the manifest is the record of what runs and what consumes it. |
 
 A GPU module adds `runtime: nvidia` under `container`. The container fields
 sheppy accepts are listed in the
@@ -69,7 +69,8 @@ sheppy accepts are listed in the
 ### Add a mock alternative
 
 Every node carries a mock alongside the real one, so a profile that selects
-only mocks runs on a workstation with nothing plugged in:
+only mocks runs on a workstation with nothing plugged in. It goes in the same
+`alternatives:` list as the real one:
 
 ```yaml
       - id: scene_camera_mock
