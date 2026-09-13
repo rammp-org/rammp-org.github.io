@@ -5,49 +5,38 @@ title: Development flow
 # Development flow
 
 RAMMP software comes from several labs, each with its own codebase and its
-own dependencies, and all of it has to run together on one chair. To make
-that workable, every module ships as a Docker image. Sharing code between
-labs becomes pulling an image rather than building someone else's source and
-reconciling its dependencies with yours. Deploying is the same act: the chair
-runs the images that were tested, pinned by tag, and nothing else.
+own dependencies, and all of it has to run together on one chair. Docker is
+how that stays manageable:
 
-Images are slow to iterate on. An edit that takes seconds to test with
-`colcon build` takes minutes through `docker build`, and the manifest has to
-be edited to point at every new tag. So your own code does not run from an
-image while you are developing it. It runs natively from `~/ros2_ws`, next
-to the images, and is containerized once it is ready to ship.
+- **Sharing code** is pulling an image, not building another lab's source and
+  reconciling its dependencies with yours.
+- **Deploying** is running the images that were tested, pinned by tag.
+- **Developing** stays fast because your own code is not an image yet. It
+  runs natively from `~/ros2_ws`, next to the images.
 
 ## How the pieces fit
 
-The stable modules, the camera drivers, the arm driver, and every published
-module, run as containers on the host network. A node you launch from your
-workspace is on the same DDS network and sees their topics directly. The
-message types are shared through [rammp-interfaces-ros2](/interfaces), which
-is compiled into every image and is the one RAMMP repo you build in your
-workspace.
+Everything on the system is ROS 2 code, and all of it can be built and run
+natively. When a piece becomes stable it is packaged into a Docker image so
+that anyone can run it without building it, and so the chair runs a known
+version of it. At any moment the system is therefore a mix: stable modules
+running from images, and code under development running from source. Both
+are on the same DDS network, so they see each other's topics without any
+extra configuration.
 
-[sheppy](/sheppy) launches and supervises nodes in either form. In its
-manifest a node can have more than one alternative: a `docker` alternative
-that runs an image, and a `launch_file` alternative that runs `ros2 launch`
-from your workspace. A profile selects one alternative per node. Moving your
-node from development to deployment is a change of profile, not a change to
-the manifest.
+[sheppy](/sheppy) launches and supervises both kinds. In its manifest, one
+node can list an image and a workspace launch as alternatives, and a profile
+selects which one runs. Moving your code from source to image is a change of
+profile, not a change to the manifest.
 
-```mermaid
-flowchart LR
-  P["profile"] -->|"selects one alternative per node"| M["manifest"]
-  M --> A1["scene_camera<br/>docker: gemini image"]
-  M --> A2["arm<br/>docker: driver image"]
-  M --> A3["your node<br/>launch_file: ~/ros2_ws<br/>docker: your image"]
-```
+The three workflows below are three ways to navigate that mix, depending on
+what you are working on.
 
 ## The three workflows
 
-What you are doing determines how the stable modules and your own code run.
-Each combination is a workflow, and each has its own page with the setup and
-a worked example.
+Each has its own page with the setup and a worked example.
 
-| | Stable modules run as | Your code runs as | Use it |
+| | Stable modules run as | Your code runs as | When to use |
 | --- | --- | --- | --- |
 | [Hybrid](/development/hybrid) | Images, under sheppy | Native, from `~/ros2_ws` | Day to day. The recommended workflow. |
 | [Fully native](/development/native) | Native, cloned into `~/ros2_ws` | Native | Changing a stable module itself, or a machine that cannot pull images. Not recommended otherwise. |
