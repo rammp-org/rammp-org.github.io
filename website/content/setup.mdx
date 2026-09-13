@@ -197,13 +197,27 @@ line installs it —
 [Getting started → Install](/sheppy/getting-started#install) — and puts
 `sheppy` and `sheppyd` on your `PATH`.
 
+## Workspace
+
+Your code lives in `~/ros2_ws`, with the shared message types cloned into it.
+ROS 2 Humble is assumed to be installed.
+
+```bash
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone https://github.com/rammp-org/rammp-interfaces-ros2.git
+cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y && colcon build
+```
+
+How to develop in it is [Development flow](/development).
+
 ## First run
 
 The chair's manifest is in the `rammp-deployments` clone from
-[Before you start](#before-you-start). Go to the deployment's directory and
-open sheppy there:
+[Before you start](#before-you-start). Source your workspace, go to the
+deployment's directory, and open sheppy there:
 
 ```bash
+source ~/ros2_ws/install/setup.bash
 cd rammp-deployments/december_2026
 sheppy
 ```

@@ -66,6 +66,10 @@ A GPU module adds `runtime: nvidia` under `container`. The container fields
 sheppy accepts are listed in the
 [manifest reference](/sheppy/manifest-reference#docker-plugin).
 
+If you followed [Development flow](/development), the node already has a
+`launch_file` alternative that runs from your workspace. Keep it. The `real-arm-cameras`
+profile selects the image; your `dev` profile keeps selecting the native one.
+
 ### Add a mock alternative
 
 Every node carries a mock alongside the real one, so a profile that selects
