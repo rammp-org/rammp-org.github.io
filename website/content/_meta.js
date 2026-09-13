@@ -16,5 +16,6 @@ export default {
   sheppy: 'sheppy',
   '-- subsystems': { type: 'separator', title: 'Subsystems' },
   'kinova-gen3-ros2': 'Controlling the arm',
+  'controlling-the-base': 'Controlling the base',
   contributing: { display: 'hidden' }
 }
