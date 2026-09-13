@@ -10,10 +10,12 @@ export default {
   '-- developing': { type: 'separator', title: 'Developing' },
   setup: 'Developer setup',
   development: 'Development flow',
+  'git-workflow': 'Recommended git workflow',
   publishing: 'Publishing a module',
   interfaces: 'Interfaces',
   sheppy: 'sheppy',
   '-- subsystems': { type: 'separator', title: 'Subsystems' },
   'kinova-gen3-ros2': 'Controlling the arm',
+  'controlling-the-base': 'Controlling the base',
   contributing: { display: 'hidden' }
 }

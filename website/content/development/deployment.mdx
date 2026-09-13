@@ -1,0 +1,92 @@
+---
+title: Deployment workflow
+---
+
+# Deployment workflow
+
+Everything runs from images under sheppy, including your node. This is what
+the chair does, so it is how you check that your module is ready to ship.
+
+The point of this workflow is that "works on my machine" and "works on the
+chair" become the same test. In the hybrid workflow your node runs from your
+workspace, with your environment, your installed packages, and your build.
+The chair has only the image. If the image runs correctly here, next to the
+same stable images the chair runs, it will run correctly there.
+
+## When to run it
+
+Before you open the pull request that publishes the module, and again
+whenever the Dockerfile or the module's dependencies change. It is not the
+loop you develop in: an image build takes minutes and the hybrid workflow's
+`colcon build` takes seconds.
+
+## Give the node an image alternative
+
+Start from a node that already has a `launch_file` alternative from the
+[hybrid workflow](/development/hybrid#let-sheppy-launch-it-optional). Copy
+the RAMMP-docker template into the package, as on
+[Build and publish](/publishing/build-and-publish), and set its `CMD` to the
+same launch file the native alternative runs:
+
+```dockerfile
+CMD ["ros2", "launch", "rammp_hello", "hello.launch.py"]
+```
+
+```bash
+cd ~/ros2_ws/src/rammp_hello
+docker build -t rammp_hello:dev .
+```
+
+Add a second alternative beside the first. The native one stays.
+
+```yaml
+nodes:
+  - name: frame_counter
+    alternatives:
+      - id: native
+        # ... unchanged
+      - id: image
+        kind: docker
+        container:
+          image: rammp_hello:dev
+          network_mode: host
+          ipc: host
+          user: "1000:1000"
+          environment:
+            ROS_DOMAIN_ID: "0"
+        subscribes:
+          - /scene_camera/color/image_raw
+        publishes:
+          - /frame_counter/frame_count
+```
+
+`network_mode: host` and `ipc: host` put the container on the same DDS
+network as everything else, and `user` keeps its shared-memory segments
+readable from the host. What each field does is on
+[Deploy it](/publishing/deploy#the-node-entry). A GPU module adds
+`runtime: nvidia`.
+
+## Run everything from images
+
+In the TUI, select `frame_counter → image`, save the profile as `deploy`,
+and:
+
+```bash
+sheppy up deploy
+sheppy status
+ros2 topic echo /frame_counter/frame_count
+```
+
+Every node, yours included, is now a container. Compare against the `dev`
+profile: same topics, same rates, same behaviour. A difference is a
+dependency or an environment variable your workspace had and the image does
+not.
+
+## Ship it
+
+Once the image behaves the same as the native node, continue with
+[Publishing a module](/publishing). CI builds the image from a release tag.
+The pull request to `rammp-deployments` adds the node with only its image
+alternative, pinned to that tag, and adds it to the `real-arm-cameras`
+profile. The `dev` machine and native alternative stay as your local edit,
+so developing the next change is the hybrid workflow again.

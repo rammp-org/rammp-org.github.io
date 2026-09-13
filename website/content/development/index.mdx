@@ -2,15 +2,59 @@
 title: Development flow
 ---
 
-import { Cards } from 'nextra/components'
-
 # Development flow
 
-This section describes how to work on RAMMP day to day: how a piece of work
-goes from an idea to code running on the chair, and what you do at each stage.
-The guide itself is being written. Until it lands, the page below covers the
-branching and pull request conventions every repo uses.
+Our developer tooling is designed to accelerate your experimentation while
+simplifying deployment for demos. Two tools do that.
 
-<Cards>
-  <Cards.Card title="Git workflow" href="/development/git-workflow" arrow />
-</Cards>
+- **Docker.** Every stable module ships as an image, built from its own repo
+  and pinned by tag. An image carries its dependencies with it, so running a
+  module does not require building it or matching its environment.
+- **[sheppy](/sheppy).** Launches and supervises every node from one
+  manifest, whether the node runs from an image or from a workspace. A node
+  can list both as alternatives, and a profile selects which one runs.
+
+With these tools:
+
+- Running code from all partners simplifies to pulling their Docker images.
+- You continue using your standard ROS 2 flow for testing your own modules.
+- Deploying for our frequent demos simplifies to launching all of the Docker
+  containers.
+
+## Development and deployment architecture
+
+Everything on the system is ROS 2 code, and all of it can be built and run
+natively. As experimental code becomes stable, we recommend packaging it as a
+Docker container, so that it becomes deployable for demos and can be shared
+across our institutions.
+
+The result is a mix: modules packaged with Docker, and code building natively
+on your system. Both are on the same DDS network, so they see each other's
+topics without extra configuration. The workflows below are three options
+for managing that mix well.
+
+## The three workflows
+
+Each has its own page with the setup and a worked example.
+
+| | Stable modules run as | Your code runs as | When to use |
+| --- | --- | --- | --- |
+| [Hybrid](/development/hybrid) | Images, under sheppy | Native, from `~/ros2_ws` | Day to day. The recommended workflow. |
+| [Fully native](/development/native) | Native, cloned into `~/ros2_ws` | Native | Changing a stable module itself, or a machine that cannot pull images. Not recommended otherwise. |
+| [Deployment](/development/deployment) | Images, under sheppy | An image, under sheppy | Checking a module is ready to ship. This is what the chair runs. |
+
+**Hybrid.** The stable stack comes up with one `sheppy up`, pinned to the
+same versions every other lab runs, and your code stays in the native build
+loop.
+
+**Fully native.** Every line of the stack is in your workspace and you can
+change any of it. In exchange you build and maintain other labs' code, and
+your stack drifts from the pinned images the chair runs.
+
+**Deployment.** The hybrid workflow with your node switched to its image
+alternative, so that "works on my machine" and "works on the chair" are the
+same test. Run it before you open the pull request that publishes your
+module.
+
+The [recommended git workflow](/git-workflow) applies throughout: every
+change to every repo arrives through a reviewed pull request.

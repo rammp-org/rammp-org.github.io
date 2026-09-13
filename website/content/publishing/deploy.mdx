@@ -66,6 +66,10 @@ A GPU module adds `runtime: nvidia` under `container`. The container fields
 sheppy accepts are listed in the
 [manifest reference](/sheppy/manifest-reference#docker-plugin).
 
+If you followed the [hybrid workflow](/development/hybrid), the node also has
+a `launch_file` alternative on your workstation. That one is a local edit and
+does not go in this pull request; only the image alternative does.
+
 ### Add a mock alternative
 
 Every node carries a mock alongside the real one, so a profile that selects
