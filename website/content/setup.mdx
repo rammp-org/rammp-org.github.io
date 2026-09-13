@@ -63,13 +63,22 @@ on JetPack 6.0 must be reflashed: its driver predates the CUDA 12.6 runtime in
 
 ### Install the real-time kernel
 
-On JetPack 6 it is an apt package set, not a flash option:
+On JetPack 6 it is an apt package set, not a flash option. The packages live
+in a separate NVIDIA repository that a fresh flash does not know about, so add
+it first:
 
 ```bash
+echo "deb https://repo.download.nvidia.com/jetson/rt-kernel r36.4 main" \
+  | sudo tee -a /etc/apt/sources.list.d/nvidia-l4t-apt-source.list
+sudo apt update
 sudo apt install nvidia-l4t-rt-kernel nvidia-l4t-rt-kernel-headers \
   nvidia-l4t-rt-kernel-oot-modules nvidia-l4t-display-rt-kernel
 ```
 
+The install adds a `real-time` entry to `/boot/extlinux/extlinux.conf` next
+to the stock `primary` one. Open the file and make sure it says
+`DEFAULT real-time`: NVIDIA's kernel packages set `DEFAULT` to whichever
+kernel they configured last, and that is not always the real-time one.
 Reboot, then confirm —
 [Real-Time Kernel Using OTA Update](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Kernel/KernelCustomization.html#real-time-kernel-using-ota-update).
 
@@ -86,11 +95,12 @@ cat /sys/kernel/realtime        # 1
 
 ### Isolate the real-time core
 
-Append `isolcpus=11 nohz_full=11 rcu_nocbs=11` to the `APPEND` line in
-`/boot/extlinux/extlinux.conf` and reboot. Core 11 is the highest-numbered
-core on the AGX Orin; the arm's control loop is pinned there. Keep the
-original line as a second `LABEL` so a typo does not leave the board
-unbootable, and do this at the console, not over SSH —
+Append `isolcpus=11 nohz_full=11 rcu_nocbs=11` to the `APPEND` line of the
+`real-time` label in `/boot/extlinux/extlinux.conf`, check that
+`DEFAULT real-time` is still set, and reboot. Core 11 is the highest-numbered
+core on the AGX Orin; the arm's control loop is pinned there. Leave the
+`primary` label untouched so a typo does not leave the board unbootable, and
+do this at the console, not over SSH —
 [rt-tuning §B](https://github.com/rammp-org/kinova-gen3-driver/blob/main/docs/rt-tuning.md#b-boot-time-tunings-kernel-cmdline--needs-a-reboot).
 
 ### Grant real-time privileges once
@@ -128,7 +138,7 @@ driver's
 
 | Setting | Must be | Check |
 | --- | --- | --- |
-| Kernel | PREEMPT_RT | `cat /sys/kernel/realtime` → `1` |
+| Kernel | PREEMPT_RT | `cat /sys/kernel/realtime` → `1`, and `uname -r` ends in `-rt-tegra` |
 | Power model | MAXN — all cores, no power cap | `sudo nvpmodel -q` |
 | CPU governor | `performance` on the RT core | `cat /sys/devices/system/cpu/cpu11/cpufreq/scaling_governor` |
 | Clocks | locked at maximum | `sudo jetson_clocks --show` |
@@ -136,7 +146,7 @@ driver's
 | Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
 | RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
 | Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
-| Transparent huge pages | `never` | `cat /sys/kernel/mm/transparent_hugepage/enabled` |
+| Transparent huge pages | `never`, or the file absent | `cat /sys/kernel/mm/transparent_hugepage/enabled` |
 
 Then measure:
 
