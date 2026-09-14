@@ -1,0 +1,68 @@
+---
+title: RAMMP Gen 1.2
+---
+
+# RAMMP Gen 1.2
+
+Gen 1.2 is the chair that was used for the National Veterans Wheelchair Games 2026. It is a slightly upgraded version of the Gen 1.0 chair, which was used during the April 2026 demo. The only difference between Gen 1.0 and Gen 1.2 is the addition of the powered front casters for faster curb climbing. Because Gen 1.2 contains all of the hardware from 1.0 and more, there will not be a separate page for Gen 1.0, thus this page covers the first iteration of RAMMP.
+
+## The wheelchair base
+
+![The RAMMP Gen 1.2 chair: MEBot base with the Kinova Gen3 arm mounted on the left side](/gen-1-2-base.jpg)
+
+The RAMMP base is the [MEBot](https://www.herl.pitt.edu/mebot), the Mobility
+Enhancement Robotic Wheelchair created at HERL. It actuates its caster wheels
+and drive wheels independently, which lets it climb curbs and level the seat on
+uneven terrain. Sensors in the base include joint encoders, load cells, and an
+IMU.
+
+### Electronics
+
+One Jetson Orin NX runs everything above the hardware: the arm driver, the
+base software, perception, and every module. A Teensy 4.1 handles the
+real-time I/O between that computer and the base. Three RoboClaw motor
+drivers move the base, and the stock R-Net controller turns the drive wheels.
+
+#### Compute
+
+| Qty | Component | Role |
+| --- | --- | --- |
+| 1 | NVIDIA Jetson Orin NX | Runs the arm driver, the base software, perception, and modules |
+| 1 | Teensy 4.1 | Real-time I/O: reads the base sensors and commands the RoboClaws |
+| 1 | LUCI | Bridge from ROS to the R-Net controller, so software can drive the wheels |
+
+#### Sensors and inputs
+
+| Qty | Component | Measures |
+| --- | --- | --- |
+| 2 | Orbbec cameras | Scene cameras |
+| 1 | R-Net joystick with R-Net I/O module | User drive input |
+| 1 | BNO055 IMU, on the base chassis under the seat | Chassis orientation |
+| 6 | AS5048B magnetic encoders | Joint angles |
+| 2 | Optical encoders | Drive-wheel rotation |
+| 4 | Load cells with strain-gauge amplifiers | Vertical load on the front caster and the drive wheels, for curb climbing |
+
+#### Actuation
+
+Three RoboClaw 30A motor drivers actuate the base, two motors each. The
+casters and the drive-wheel lift use electrohydraulic actuators (EHA); the
+carriages use Dumore geared motors.
+
+| Qty | Driver | Motors | Moves |
+| --- | --- | --- | --- |
+| 1 | RoboClaw 30A | 2 EHA | Front caster and rear caster |
+| 1 | RoboClaw 30A | 2 EHA | Left and right drive wheels, vertical movement |
+| 1 | RoboClaw 30A | 2 Dumore geared motors | Left and right carriages |
+| 1 | R-Net controller | 2 drive-wheel motors | Left and right drive wheels, rotation |
+
+## The Kinova Gen3 arm
+
+![The Kinova Gen3 arm on RAMMP Gen 1.2 with the wrist camera and gripper](/gen-1-2-arm.jpg)
+
+RAMMP uses a [Kinova Gen3](https://www.kinovarobotics.com/product/gen3-robots)
+7 degree-of-freedom arm for manipulation tasks. The ROS 2 interface to it is
+documented under [Controlling the arm](/kinova-gen3-ros2).
+
+### Electronics
+
+The arm carries an Intel RealSense D405 as its wrist camera.

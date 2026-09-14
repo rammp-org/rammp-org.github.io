@@ -1,9 +1,9 @@
 export default {
   index: 'Introduction',
   '-- hardware': { type: 'separator', title: 'Hardware' },
-  'gen-1-2': 'RAMMP Gen 1.2',
-  platform: 'RAMMP Gen 1.5',
-  'gen-2-0': 'RAMMP Gen 2.0',
+  platform: 'Current chair: RAMMP Gen 1.5',
+  'previous-generations': 'Previous generations',
+  'gen-2-0': 'RAMMP Gen 2.0 (in development)',
   '-- software': { type: 'separator', title: 'Software stack' },
   software: 'Software versions & core repos',
   modules: 'Modules registry',
