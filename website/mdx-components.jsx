@@ -1,4 +1,9 @@
 import { useMDXComponents as getThemeComponents } from 'nextra-theme-docs'
+import { Callout, Cards, Steps, Tabs } from 'nextra/components'
+
+// Composed docs come from other repos and do not always import these. Provide
+// them globally so a page that uses <Callout> without an import still builds.
+const sharedComponents = { Callout, Cards, Steps, Tabs }
 
 const themeComponents = getThemeComponents()
 const ThemeWrapper = themeComponents.wrapper
@@ -21,5 +26,5 @@ function Wrapper({ metadata, children, ...props }) {
 }
 
 export function useMDXComponents(components) {
-  return { ...themeComponents, wrapper: Wrapper, ...components }
+  return { ...themeComponents, ...sharedComponents, wrapper: Wrapper, ...components }
 }

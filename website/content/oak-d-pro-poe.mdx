@@ -1,0 +1,267 @@
+---
+title: OAK-D Pro PoE camera
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# OAK-D Pro PoE camera
+
+The [Luxonis OAK-D Pro PoE](https://docs.luxonis.com/hardware/products/OAK-D%20Pro%20PoE)
+is a stereo depth camera with an on-board vision processor. It takes power
+and data over one Ethernet cable and sits on the chair's wired LAN next to
+the arm and the Jetson. This page covers what is on it, how to reach it from
+a laptop, how to give it an address, and how to look at every stream it
+produces.
+
+The camera is not yet a node in the deployment manifest. When it is, the
+entry follows the shape on [Deploy it](/publishing/deploy).
+
+## What is on it
+
+| Sensor | Part | Resolution | Notes |
+| --- | --- | --- | --- |
+| Color camera (`CAM_A`) | OV9782 | 1280 × 800 | Global shutter. Also usable as a third mono camera. |
+| Left mono (`CAM_B`) | OV9282 | 1280 × 800 | Stereo pair with `CAM_C`, 7.5 cm baseline. |
+| Right mono (`CAM_C`) | OV9282 | 1280 × 800 | |
+| IMU | BNO086 | | Accelerometer, gyroscope, rotation vector. |
+| IR dot projector and flood LED | LM3644 driver | | Active stereo. See [Illuminators](#illuminators). |
+
+Depth is computed on the camera from the mono pair and streamed as a depth
+map, a disparity map, or a point cloud. Nothing runs on the Jetson for that.
+
+| | |
+| --- | --- |
+| Device ID | `194430107187F42E00` |
+| MAC address | `44:a9:2c:3c:65:c3` |
+| Network bootloader | 0.0.29 |
+| Host library | [DepthAI](https://docs.luxonis.com/software-v3/) 3.x |
+
+## Where it lives on the network
+
+The chair's wired LAN is `192.168.1.0/24`. It has no DHCP server: every
+device on it carries a fixed address, and a laptop that joins it is set by
+hand.
+
+| Device | Address |
+| --- | --- |
+| Kinova Gen3 arm | `192.168.1.10` |
+| Jetson AGX Orin, `eno1` | `192.168.1.11` |
+| OAK-D Pro PoE | `192.168.1.200` |
+| A laptop on the LAN | `192.168.1.100`, mask `255.255.255.0` |
+
+The camera's address is written into its bootloader, so it comes up there on
+every power cycle without a DHCP server. How it got there is
+[Set a static address](#set-a-static-address) below.
+
+<Callout type="info">
+  A camera fresh from the box, or one whose config has been cleared, asks for
+  a DHCP lease and, when none arrives, falls back to `169.254.1.222` with a
+  `255.255.0.0` mask. A replacement unit starts there, and so do the first
+  two steps below.
+</Callout>
+
+## Bring-up
+
+<Steps>
+
+### Wire it
+
+One cable from the camera's M12 connector to a PoE switch or injector that
+supplies 802.3af. The camera boots on its own and answers on the network
+from its bootloader; it does not need a host to be running.
+
+### Install DepthAI on the laptop
+
+A virtual environment on Python 3.12 with the library and Luxonis' viewer:
+
+```bash
+uv venv -p 3.12 ~/oak
+uv pip install -p ~/oak/bin/python depthai depthai-viewer
+```
+
+`depthai` is the 3.x library that every script on this page uses.
+`depthai-viewer` is a separate application; it builds a private environment
+of its own the first time it runs, with the older 2.x library inside.
+
+### Reach a camera on its fallback address
+
+Skip this step if the camera already has its static address. Otherwise put
+the laptop's Ethernet adapter on the fallback subnet, for example
+`169.254.1.5` with mask `255.255.0.0`, and connect to the camera by IP:
+
+```bash
+~/oak/bin/python - <<'EOF'
+import depthai as dai
+with dai.Device(dai.DeviceInfo("169.254.1.222")) as dev:
+    print(dev.getDeviceName(), dev.getDeviceId())
+    for c in dev.getConnectedCameraFeatures():
+        print(c.socket.name, c.sensorName, c.width, c.height)
+    print(dev.getConnectedIMU())
+EOF
+```
+
+It prints `OAK-D-PRO-POE`, the device ID, the three cameras and `BNO086`.
+Connecting by IP works whether or not discovery does. Device discovery,
+which is what the viewer uses, does not work on a Mac while the camera is on
+the link-local subnet; the reason is in
+[Discovery on macOS](#discovery-on-macos), and the next step removes the
+problem.
+
+### Set a static address
+
+Write `192.168.1.200/24` into the camera's bootloader config. The
+`DEPTHAI_DEVICE_NAME_LIST` variable makes discovery ask the camera directly
+instead of broadcasting, which is what lets this work from the link-local
+subnet:
+
+```bash
+DEPTHAI_DEVICE_NAME_LIST=169.254.1.222 ~/oak/bin/python - <<'EOF'
+import depthai as dai
+info = dai.Device.getAllAvailableDevices()[0]
+bl = dai.DeviceBootloader(info)
+cfg = dai.DeviceBootloader.Config()
+cfg.setStaticIPv4("192.168.1.200", "255.255.255.0", "192.168.1.1")
+ok, msg = bl.flashConfig(cfg)
+print("flashed:", ok, msg)
+rc = bl.readConfig()
+print("static:", rc.isStaticIPV4(), rc.getIPv4(), rc.getIPv4Mask(), rc.getIPv4Gateway())
+bl.close()
+EOF
+```
+
+The read-back line must show `True 192.168.1.200 255.255.255.0 192.168.1.1`.
+Power-cycle the camera; the new address applies at the next boot. To undo
+it, call `bl.flashConfigClear()` in the same way, and the camera returns to
+DHCP with the link-local fallback.
+
+### Move the laptop to the LAN
+
+Set the Ethernet adapter to `192.168.1.100`, mask `255.255.255.0`, no
+router. Then confirm the camera is where it should be, this time with
+plain discovery and no hint:
+
+```bash
+~/oak/bin/python -c 'import depthai as dai; print([(d.name, str(d.state)) for d in dai.Device.getAllAvailableDevices()])'
+# [('192.168.1.200', 'XLinkDeviceState.X_LINK_BOOTLOADER')]
+```
+
+`X_LINK_BOOTLOADER` is the idle state. A camera a host is using reports
+`X_LINK_BOOTED` instead.
+
+From the Jetson the same check is `ping 192.168.1.200`.
+
+</Steps>
+
+## Look at the streams
+
+Two tools, both from Luxonis: the viewer for a first look, the script to
+build on.
+
+### DepthAI Viewer
+
+```bash
+~/oak/bin/depthai-viewer
+```
+
+The first run installs its private environment and takes a minute. A
+dialog that says `RVC4 not supported` may appear; dismiss it. It is the
+viewer noting that it only speaks to the previous generation of Luxonis
+processors, which is what this camera has.
+
+Pick the camera in the device list at the top left. The default layout shows
+color, depth and a point cloud. The left panel adds the mono pair and the
+IMU, and holds the stereo settings: preset, camera pair, which camera depth
+is aligned to, and the two illuminator fields. Nothing in that panel takes
+effect until **Apply**.
+
+### A DepthAI 3 pipeline in the browser
+
+DepthAI 3 serves its own web visualizer from any script. This one publishes
+every stream the camera has:
+
+```python
+# oak_streams.py — all OAK-D Pro streams at http://localhost:8082
+import sys, time
+import depthai as dai
+
+ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.1.200"
+vis = dai.RemoteConnection(httpPort=8082)
+dev = dai.Device(dai.DeviceInfo(ip))
+
+with dai.Pipeline(dev) as p:
+    rgb = p.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
+    left = p.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
+    right = p.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
+    stereo = p.create(dai.node.StereoDepth)
+    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.DEFAULT)
+    stereo.setRectification(True)
+    lq = left.requestOutput((640, 400), fps=30)
+    rq = right.requestOutput((640, 400), fps=30)
+    lq.link(stereo.left)
+    rq.link(stereo.right)
+
+    imu = p.create(dai.node.IMU)
+    imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW,
+                         dai.IMUSensor.GYROSCOPE_RAW,
+                         dai.IMUSensor.ROTATION_VECTOR], 100)
+    imu.setBatchReportThreshold(5)
+    imu.setMaxBatchReports(10)
+
+    vis.addTopic("RGB (CAM_A)", rgb.requestOutput((1280, 800), fps=30), "images")
+    vis.addTopic("Left mono (CAM_B)", lq, "images")
+    vis.addTopic("Right mono (CAM_C)", rq, "images")
+    vis.addTopic("Depth", stereo.depth, "images")
+    vis.addTopic("Disparity", stereo.disparity, "images")
+    vis.addTopic("IMU", imu.out, "imu")
+
+    p.start()
+    vis.registerPipeline(p)
+    dev.setIrLaserDotProjectorIntensity(1.0)
+    dev.setIrFloodLightIntensity(0.0)
+    while p.isRunning():
+        if vis.waitKey(1) == ord("q"):
+            break
+        time.sleep(0.01)
+```
+
+```bash
+~/oak/bin/python oak_streams.py
+```
+
+Open `http://localhost:8082`. Each topic is a tile you can toggle in the
+left panel. This script moves 49 MB/s; the viewer's default layout, 79 MB/s.
+Both are well inside gigabit Ethernet.
+
+## Illuminators
+
+The camera carries two infrared sources, and they do different jobs.
+
+| | What it does | Setting |
+| --- | --- | --- |
+| Dot projector | Paints a pattern onto the scene so stereo matching has texture on blank walls, tables and floors. This is what improves depth. Works in daylight and in the dark. | Maximum. In the viewer, `1200` in **Dot brightness [mA]**; in code, `setIrLaserDotProjectorIntensity(1.0)`. Class 1 eye safe at full power. |
+| Flood LED | A plain infrared lamp. Lets the mono cameras see in the dark. Adds no texture, so it does not help depth on featureless surfaces, and at high power it lowers the contrast of the dots. | `0` unless you need the mono images themselves in low light. Then `200` to `400` mA, or `0.2` to `0.3` in code. Maximum is `1500`. |
+
+The dot pattern is visible in the left and right mono streams. A feature
+detector running on those images will pick the dots up as features. Run such
+things on the color camera, which barely sees infrared, or turn the
+projector off for them.
+
+## Discovery on macOS
+
+Luxonis tools find PoE cameras with a UDP broadcast. On a Mac, the kernel sends broadcasts to `255.255.255.255`
+out of the interface that holds the default route, which is Wi-Fi, and it
+also claims the whole `169.254.0.0/16` link-local range for that same
+interface. So while the camera sits on its fallback address, no broadcast
+from any tool reaches it, however the Ethernet adapter is configured. Only
+packets addressed to the camera's IP go out the right port, which is why
+connecting by IP works and the viewer's device list stays empty.
+
+Two things look like fixes and are not: a `/16` mask on the adapter, and
+the network bootloader update DepthAI suggests at connect time. The camera
+has the update, 0.0.28 to 0.0.29; it is harmless and unrelated to this
+problem.
+
+What fixes it is the static address. `192.168.1.0/24` exists only on the
+Ethernet adapter, so a broadcast to `192.168.1.255` leaves on that adapter
+and the camera answers. With the camera on the LAN, discovery works in both
+tools on this page.
