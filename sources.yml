@@ -9,13 +9,12 @@
   slug: kinova-gen3-ros2
   title: Controlling the arm
   # Beyond the default exclusions (superpowers, AGENTS.md, CLAUDE.md): the
-  # on-robot runbook and the dated handoff notes are operational records, not
-  # user-facing docs. They stay in the repo.
+  # on-robot runbook is an operational record, not user-facing docs. It stays
+  # in the repo.
   # NOTE: overriding `exclude` REPLACES the default list, and compose.mjs errors
   # on a pattern that matches nothing -- so AGENTS.md/CLAUDE.md are omitted here
-  # because this repo's docs/ has neither.
+  # because this repo's docs/ has neither, and the dated handoff notes were
+  # dropped from this list when the repo removed them.
   exclude:
     - superpowers
     - on-robot-runbook.md
-    - 2026-08-14-curobo-action-tier-handoff.md
-    - 2026-08-14-jointconfig-preset-handoff.md
