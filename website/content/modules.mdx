@@ -14,7 +14,7 @@ pull request against
 | Module | What it does | Runs on | Interfaces | Maintainer |
 | --- | --- | --- | --- | --- |
 | [RAMMP-CuRobo](https://github.com/rammp-org/RAMMP-CuRobo) | GPU motion planning for the Kinova Gen3 with NVIDIA cuRobo. A goal pose or joint configuration in, a collision-free time-parameterized joint trajectory out. It never moves the arm; execution belongs to the caller. | Jetson, `rammp-cuda` | Serves `rammp_curobo_interfaces`: `PlanToPose`, `PlanToJoints`, `SetWorld`. Called by `kinova-gen3-ros2`'s `go_to_*` actions. | |
-| [kinova-quest-teleop](https://github.com/rammp-org/kinova-quest-teleop) | VR teleoperation of the Gen3 arm and Robotiq 2F-85 gripper from a Meta Quest controller. Reads controller poses, maps them to end-effector targets, enforces safety limits, and streams targets over UDP to the low-level driver. | A Mac with the headset attached. Talks to the Jetson over UDP. | UDP to `kinova-gen3-driver`'s teleop socket server, not ROS 2 | |
+| [rammp-teleop](https://github.com/rammp-org/rammp-teleop) | Teleoperation of the Gen3 arm and gripper from an Xbox pad or a Meta Quest 3 controller, through `kinova-gen3-ros2`'s streaming tier. The Quest plugs into the Jetson over USB-C; calibration is one gesture on the controller. Supersedes kinova-quest-teleop, which needed a Mac in the loop. | Jetson, `rammp-base` | Publishes `/setpoint/pose` or `/setpoint/twist`, `/setpoint/gripper`, `/estop`; calls `/acquire_control` and `/open_stream` on `kinova-gen3-ros2`. [Docs](/rammp-teleop). | |
 
 Columns:
 

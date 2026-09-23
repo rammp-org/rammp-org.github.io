@@ -16,6 +16,7 @@ export default {
   sheppy: 'sheppy',
   '-- subsystems': { type: 'separator', title: 'Subsystems' },
   'kinova-gen3-ros2': 'Controlling the arm',
+  'rammp-teleop': 'Teleoperating the arm',
   'controlling-the-base': 'Controlling the base',
   'oak-d-pro-poe': 'OAK-D Pro PoE camera',
   contributing: { display: 'hidden' }
