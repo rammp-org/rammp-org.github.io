@@ -18,3 +18,8 @@
   exclude:
     - superpowers
     - on-robot-runbook.md
+- repo: rammp-org/rammp-teleop
+  slug: rammp-teleop
+  title: Teleoperating the arm
+  # docs/superpowers holds the design spec and plan; not user-facing.
+  exclude: [superpowers]
