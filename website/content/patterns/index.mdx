@@ -14,13 +14,13 @@ uses it.
 - **[Storing state across runs](/patterns/storing-state-across-runs)** — where a
   module keeps a value that has to survive a container restart, and how it
   copes when that value is gone.
-- **[An idle node costs nothing](/patterns/idle-nodes-cost-nothing)** — a
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)** — a
   node that has not been asked to work subscribes to nothing fast; sensors and
   arm state come and go with the task that needs them.
-- **[Publish at the rate of the data](/patterns/publish-at-the-rate-of-the-data)**
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
   — block on the source instead of polling it, publish on arrival or on change
   with a slow keepalive, and pick the wire rate for the consumers.
-- **[Keep bulk data off the control path](/patterns/keep-bulk-data-off-the-control-path)**
+- **[Separating bulk data from control traffic](/patterns/separating-bulk-data-from-control-traffic)**
   — a button press never waits behind video; separate channels, send on
   change, and bound the worst-case frame.
 

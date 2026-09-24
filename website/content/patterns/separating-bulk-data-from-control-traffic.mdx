@@ -1,10 +1,10 @@
 ---
-title: Keep bulk data off the control path
+title: Separating bulk data from control traffic
 ---
 
 import { Callout } from 'nextra/components'
 
-# Keep bulk data off the control path
+# Separating bulk data from control traffic
 
 A button press has to reach the robot in tens of milliseconds. A video frame
 can be late by a frame and nobody notices. When both travel through the same
@@ -77,5 +77,5 @@ the measurements and
 
 ## Related
 
-- **[Publish at the rate of the data](/patterns/publish-at-the-rate-of-the-data)**
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
   — the rules that keep the bulk stream small in the first place.

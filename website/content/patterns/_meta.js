@@ -1,7 +1,7 @@
 export default {
   index: 'Overview',
   'storing-state-across-runs': 'Storing state across runs',
-  'idle-nodes-cost-nothing': 'An idle node costs nothing',
-  'publish-at-the-rate-of-the-data': 'Publish at the rate of the data',
-  'keep-bulk-data-off-the-control-path': 'Keep bulk data off the control path'
+  'subscribing-only-while-working': 'Subscribing only while working',
+  'publishing-at-the-rate-of-the-data': 'Publishing at the rate of the data',
+  'separating-bulk-data-from-control-traffic': 'Separating bulk data from control traffic'
 }
