@@ -11,5 +11,6 @@ content/*/
 !content/development/
 !content/publishing/
 !content/interfaces/
+!content/patterns/
 !content/previous-generations/
 public/*/

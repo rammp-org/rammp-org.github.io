@@ -12,6 +12,7 @@ export default {
   development: 'Development flow',
   'git-workflow': 'Recommended git workflow',
   publishing: 'Publishing a module',
+  patterns: 'Common patterns',
   interfaces: 'Interfaces',
   sheppy: 'sheppy',
   '-- subsystems': { type: 'separator', title: 'Subsystems' },
