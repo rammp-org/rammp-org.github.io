@@ -1,0 +1,138 @@
+---
+title: An idle node costs nothing
+---
+
+import { Callout } from 'nextra/components'
+
+# An idle node costs nothing
+
+Most of the chair's nodes wait. The door opener waits for a door, the drink
+node waits for an order, the detector waits to be enabled. In September 2026
+those waiting nodes together used more than four of the Jetson's eight cores,
+with nothing to show for it: every one of them kept its camera, arm-state and
+TF subscriptions open and paid for each message whether or not anything read it.
+
+This page is the convention for what a node may do while nothing has asked it
+to work.
+
+## Why receiving a message is not free
+
+On the Orin, a Python node with a `MultiThreadedExecutor` spends roughly
+1.5 to 2 ms of CPU per delivered message before your callback runs a single
+line. The executor wakes, rebuilds its wait set, deserializes the message and
+hands it to a thread. A callback that only stores the message still costs the
+full amount.
+
+That sets the scale for everything else. A single 100 Hz topic costs a Python
+subscriber 15 to 20% of a core. Three 15 Hz camera topics plus `/tf` cost the
+drink node 35% while it was idle, and it never looked at the frames.
+
+## The convention
+
+**A node that has not been asked to do anything subscribes to nothing that
+arrives faster than about 1 Hz.** Sensors, arm state and TF are subscribed when
+work starts and dropped when it ends.
+
+Give each interface that wraps a stream a `start()` and a `stop()`, both
+idempotent, and call them from whatever marks the start and end of work:
+
+- **A service that enables the node** creates the subscriptions on `True` and
+  destroys them on `False`. The door button detector does this in its
+  `/arm/door/detection/enable` handler, for the RGB and depth images, both
+  `camera_info` topics and its `TransformListener`.
+- **An action** creates them when the goal is accepted and destroys them in a
+  `finally` block, so a cancel or an exception also releases them. The door
+  push controller subscribes to the arm's 100 Hz force and velocity topics for
+  the length of one `/arm/door/open` goal.
+- **Several overlapping users** share a reference count under a lock. The drink
+  node counts each running action and its cup-handle streaming service; the
+  camera and arm subscriptions come up on the first user and go down with the
+  last.
+
+```python
+def _acquire_sensors(self):
+    with self._sensor_lock:
+        self._sensor_users += 1
+        if self._sensor_users == 1:
+            self.camera.start()
+            self.arm.start()
+
+def _release_sensors(self):
+    with self._sensor_lock:
+        self._sensor_users -= 1
+        if self._sensor_users == 0:
+            self.camera.stop()
+            self.arm.stop()
+```
+
+`stop()` destroys the subscriptions with `destroy_subscription`, calls
+`unregister()` on a `tf2_ros.TransformListener`, and clears the cached data so
+a later reader cannot mistake a stale frame for a fresh one.
+
+## Plan for the warm-up
+
+Data that used to be waiting in a cache now arrives a moment after `start()`.
+The delays are small, but the code has to expect them:
+
+- **A camera frame** arrives within one camera period, about 70 ms at 15 Hz.
+  A pipeline that runs on a 5 Hz timer sees it before its next tick.
+- **Arm state** arrives within one publish period, 20 ms at 50 Hz. A command
+  loop that reads the latest joint state must treat `None` as "not yet", not
+  as "reached".
+- **TF** needs two samples on each side of a stamp before a lookup at that stamp
+  succeeds, about 80 ms with the arm's state publisher. A per-frame lookup that
+  already returns `None` on failure and retries next frame needs no change.
+- **Transient-local topics** (`/tf_static`, extrinsics, `/robot_description`)
+  arrive immediately on subscribe. They can stay subscribed for the life of the
+  node; they cost nothing after the first message.
+
+Readers of the cache handle an empty cache by skipping the sample, not by
+raising. `perceive_cup_info` in the drink node does `continue` when no frame has
+arrived; before that guard the first two streaming ticks after enable logged an
+exception each.
+
+<Callout type="info">
+  Keep a warm start if the first real call has to be fast. The drink node runs
+  MediaPipe on ten frames at launch so the first mouth detection is not a cold
+  model load. It calls `start()` for that, and `stop()` right after.
+</Callout>
+
+## What still costs something
+
+Two things remain after the subscriptions are gone, and both are cheap:
+
+- **Timers below about 10 Hz.** A 5 Hz processing timer that returns at once
+  when disabled is under 1%.
+- **Status topics at 1 Hz** such as `/arm/status`, `/diagnostics`, and the GUI
+  connection flag.
+
+An idle node that follows this page sits under 2% of a core. The door nodes
+and the drink node all do, down from 21%, 26% and 58%.
+
+## What does not belong here
+
+- **Do not throttle inside the callback.** Dropping nine messages out of ten in
+  Python still pays the executor cost for all ten. Either the publisher sends
+  less, or the subscriber is not there.
+- **Do not keep a subscription "so the data is buffered and ready".** The
+  buffer costs more than the 70 ms it saves, and the first frame after enable
+  arrives before anyone can notice.
+- **Do not poll `rclpy.spin_once` from a callback** to fetch fresh data. It
+  detaches the node from its executor and delivery stops.
+
+## A module that does this
+
+The drink node in Demo-Software (`demo_modules/cornell_feeding`): its camera
+interface and arm client expose `start()`/`stop()`, the action server
+reference-counts them around every action and around cup-handle streaming, and
+the head-perception warm start brings the camera up only for itself. Idle, the
+node dropped from 58% of a core to 0.5%, and with nobody consuming aligned depth
+at idle, the RealSense driver itself dropped from 22% to 14%. See
+[Demo-Software #263](https://github.com/rammp-org/Demo-Software/pull/263).
+
+## Related
+
+- **[Publish at the rate of the data](/patterns/publish-at-the-rate-of-the-data)**
+  — the publisher's half of the same bargain.
+- **[Measure it on the chair](/patterns/measure-on-the-chair)** — how to see
+  what your node costs when it is doing nothing.

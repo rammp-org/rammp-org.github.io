@@ -1,0 +1,111 @@
+---
+title: Measure it on the chair
+---
+
+import { Callout } from 'nextra/components'
+
+# Measure it on the chair
+
+Every number on the other pattern pages came from the Jetson with the full
+system running, not from a workstation. A laptop hides the cost of a Python
+node by being ten times faster; the chair does not. Before you say a change is
+faster, measure it there, before and after, the same way.
+
+## What "idle" should cost
+
+With the arm and LUCI powered and nothing running, the full system in
+September 2026 used 81% of the Jetson's eight cores. After the changes on these
+pages it uses 49%. The targets that fell out of that work:
+
+| Thing | Idle budget |
+| --- | --- |
+| A Python node that is waiting for work | under 2% of a core |
+| A node that must keep one 10 Hz topic open | under 5% |
+| A device driver (camera, arm) | its data rate, and no more when nobody subscribes |
+| The whole system, nothing running | under half the machine, so a task has room |
+
+The reason for the last row: drink perception and door detection each add
+close to a full core when they run, and the GUI is a further core on top. A
+system that idles at 80% has nowhere to put them.
+
+## The procedure
+
+1. **Bring the whole system up the way the operator does.** `sheppy up full`
+   from the repo on the chair, with the arm and the LUCI chair powered and awake.
+   A node measured alone hides the messages its neighbours send it.
+2. **Wait for it to settle.** About 100 s: calibration finishes, the GUI
+   connects, the warm starts are over.
+3. **Sample per-process CPU for 30 s.** `top -b -c -d 5 -n 7`, skip the first
+   sample (it is a lifetime average), and average the rest per PID:
+
+   ```bash
+   top -b -c -w 400 -d 5 -n 7 | awk '
+     /^top -/ { sample++; inproc = 0; next }
+     /^ *PID/ { inproc = 1; next }
+     inproc && sample > 1 && NF >= 12 {
+       cmd = ""; for (i = 12; i <= NF; i++) cmd = cmd " " $i
+       cpu[$1 "|" substr(cmd, 1, 110)] += $9
+     }
+     END { for (k in cpu) if (cpu[k] / 6 >= 0.5) printf "%6.1f  %s\n", cpu[k] / 6, k }
+   ' | sort -rn
+   ```
+4. **Read machine-wide busy time** from the `cpu` line of `/proc/stat` before
+   and after the sample window. One number for the whole change.
+5. **Check the wire.** `ros2 topic hz` on the topics you touched and
+   `ros2 topic info` for subscriber counts. A subscription that should be gone
+   when idle shows up in the count.
+6. **Count log lines.** `wc -l` on the node's sheppy log after a fixed time. A
+   per-message log costs the launch wrapper CPU and fills the disk.
+7. **Bring it down.** `sheppy down`, and confirm with `docker ps` and `pgrep`.
+   Never leave the arm or the base running unattended.
+
+Repeat the same steps on the unchanged branch first, on the same day and in the
+same hardware state. Note the state in the result: the LUCI node alone is a
+third of a core, so a run with the chair asleep is not comparable to one with
+it awake.
+
+<Callout type="info">
+  The chair puts LUCI to sleep when it is idle. The gRPC node then exits and
+  sheppy does not respawn it. Wake the chair, then `sheppy restart luci`.
+</Callout>
+
+## Report it
+
+Put a table in the PR: one row per process you changed, before and after, plus
+the machine-wide row, and the measured topic rates. Say which hardware was on.
+Say which row is the one change that alters something on the wire, if any, so
+the reviewer knows where to look. The "Test Results" section of
+[Demo-Software #263](https://github.com/rammp-org/Demo-Software/pull/263) is
+the shape to copy.
+
+## Measuring latency
+
+CPU is the easy half. For a press that feels slow:
+
+- **Timestamp both ends.** Register your own listener on the same source (for
+  Unreal, a second websocket on the preset) and log when the event leaves, then
+  match it with the node's log line for when it arrived. The gap is the queue.
+- **Look at the queue, not the CPU.** The 5 s GUI lag happened on a machine with
+  cores to spare. `ss -tnp` on the connection, or a count of unanswered calls,
+  found it.
+- **Profile only when the arithmetic fails.** The per-message cost of rclpy on
+  the Orin, 1.5 to 2 ms, times the message rate explains most Python nodes
+  without a profiler. `py-spy` needs root on the chair; ask before reaching for
+  it.
+
+## What does not belong here
+
+- **Numbers from a workstation.** They are not wrong, they are just not the
+  chair.
+- **A single `top` screenshot.** It shows one second, and the GUI alone swings
+  by 20 points between seconds.
+- **Measuring with a task running** when the claim is about idle. Measure both,
+  and say which is which.
+
+## Related
+
+- **[An idle node costs nothing](/patterns/idle-nodes-cost-nothing)** and
+  **[Publish at the rate of the data](/patterns/publish-at-the-rate-of-the-data)**
+  — what to change once the numbers say where the cost is.
+- **[Bring it up](/publishing/deploy#bring-it-up)** — the sheppy commands the
+  procedure uses.

@@ -1,0 +1,83 @@
+---
+title: Keep bulk data off the control path
+---
+
+import { Callout } from 'nextra/components'
+
+# Keep bulk data off the control path
+
+A button press has to reach the robot in tens of milliseconds. A video frame
+can be late by a frame and nobody notices. When both travel through the same
+queue, the frames win, because there are more of them.
+
+The GUI bridge showed this in September 2026: once drink detection had streamed
+for half a minute, pressing **Confirm** took 5 to 8 seconds to reach the arm.
+The bridge sent about 30 Remote Control calls a second to Unreal over the same
+websocket that Unreal used to deliver button events, Unreal serves one
+connection's messages in order at roughly one per frame, and the press queued
+behind hundreds of unanswered calls.
+
+## The convention
+
+**Give latency-sensitive messages their own channel.** The bridge now opens two
+websockets to Unreal: a receive-only connection that registers the preset and
+delivers `UserInput` events, and a command connection for calls and their
+responses. A press can no longer wait behind a call. The same press now arrives
+in 11 ms.
+
+**Send bulk data only on change, only when someone can see it, and sized for
+the consumer.**
+
+- The bridge sends joint arrays to Unreal only when a joint moved, and the
+  system state only when it changed, each with a 2 s refresh. Idle traffic to
+  the GUI fell from 40 KB/s to 5 KB/s, and the GUI's own CPU fell with it.
+- The drink node used to stream its segmentation mask to the GUI on every frame.
+  The GUI could not keep up and grew sluggish. It now sends the bounding box,
+  which is what the operator looks at.
+- Rendering has a budget too. Unreal uncapped used two cores and the whole GPU
+  to draw a mostly static screen; capped at 25 fps it draws the same 15 Hz
+  camera feeds at a third of the cost.
+
+**Do not pump bulk data and serve latency from one Python process.** The GIL
+makes a process that copies 35 MB/s of video into a socket a poor place to
+also handle a service call. When a node has to do both, the video path belongs
+in its own process, or at least its own thread with the work done in C (a
+`cv2` call, a socket send) so the GIL is released.
+
+<Callout type="info">
+  The order of fixes matters. Splitting the channel fixed the 5 s lag by
+  itself; sending less made it robust. Do the structural fix first, then trim
+  the volume.
+</Callout>
+
+**Bound the worst case, not the average.** Cup detection ran DBSCAN over every
+valid depth pixel. On a typical frame that was a second; on a close-up of the
+cup it was 18 seconds, during which the node answered nothing. Grid-subsampling
+above 4,000 points made the worst frame 330 ms with poses identical to 0.2 mm.
+When a per-frame algorithm's cost depends on the input, test it on the largest
+input the camera can produce, and keep a recorded bag of that input in the repo
+so the check can be repeated.
+
+## What does not belong here
+
+- **Raising the priority of the control path.** Priorities do not help when
+  both paths share one queue in another process.
+- **A bigger queue.** It moves the lag, it does not remove it.
+- **Compressing the bulk stream on the same thread** that handles control. The
+  compression is now the thing the press waits behind.
+
+## A module that does this
+
+The GUI bridge in Demo-Software (`core/rammp_prototype_gui`): a second websocket
+for events, calls sent on change with a periodic refresh, and video frames
+forwarded as they arrive from the cameras. See
+[Demo-Software #258](https://github.com/rammp-org/Demo-Software/issues/258) for
+the measurements and
+[#259](https://github.com/rammp-org/Demo-Software/pull/259) for the change.
+
+## Related
+
+- **[Publish at the rate of the data](/patterns/publish-at-the-rate-of-the-data)**
+  — the rules that keep the bulk stream small in the first place.
+- **[Measure it on the chair](/patterns/measure-on-the-chair)** — how to
+  timestamp a press end to end.

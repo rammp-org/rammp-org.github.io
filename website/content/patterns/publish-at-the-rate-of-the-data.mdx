@@ -1,0 +1,105 @@
+---
+title: Publish at the rate of the data
+---
+
+import { Callout } from 'nextra/components'
+
+# Publish at the rate of the data
+
+A publisher decides how much every subscriber pays. On the Orin, each message
+costs a Python subscriber 1.5 to 2 ms whether or not the value changed, so a
+node that republishes the same numbers from a fast timer is spending other
+nodes' CPU, not just its own.
+
+The base control node was the clearest case. Its Teensy sends telemetry at a
+fixed 10 Hz. The node read the serial port from a 1 kHz timer that checked
+`in_waiting`, republished joint states and chair state from two 100 Hz timers,
+and sent the LUCI joystick from a 200 Hz timer. It used 93% of a core to relay
+10 Hz of data. The same node now uses 15%.
+
+## The convention
+
+**Never loop faster than the source.** If a device delivers data at a rate,
+read it at that rate:
+
+- **Block on the source instead of polling it.** A thread that sits in
+  `serial.readline()` wakes exactly when a line arrives. A timer that polls
+  `in_waiting` a thousand times a second wakes a thousand times a second.
+- **Publish on arrival.** When telemetry comes in, convert it and publish it
+  then. Do not cache it for a timer to re-send.
+- **Gate loops on a new stamp.** Head perception ran MediaPipe 240 times a second
+  on a 15 Hz camera until it started comparing the frame's header stamp with the
+  last one it processed.
+
+**Publish state on change, with a slow keepalive.** State that changes rarely,
+such as the system state machine or the set of allowed GUI commands, goes out
+when it changes and then once a second, so a late subscriber still gets it and
+the consumer can detect a dead publisher. The timer that checks for change can
+run at 10 Hz; the message does not.
+
+```python
+def publish_system_state(self):
+    msg = self._build_state()
+    key = (msg.state, list(msg.supported_user_inputs))
+    now = time.monotonic()
+    if key != self._last_published or now - self._last_publish_time >= 1.0:
+        self._pub.publish(msg)
+        self._last_published = key
+        self._last_publish_time = now
+```
+
+**Forward inputs as they arrive, and keep the keepalive from doubling them.**
+The LUCI chair needs its remote joystick above 10 Hz or it toggles the brakes.
+The base node forwards the user's joystick the moment it arrives and runs a
+50 Hz keepalive that skips its tick when something was sent in the last period.
+The wire carries about 50 Hz, the user's input has no added latency, and an
+autonomous drive command waits at most 20 ms.
+
+**Choose the wire rate for the consumers.** A feedback loop can run faster than
+it publishes. The arm driver reads the Kortex arm at 100 Hz because its
+collision check and comms watchdog want that, and publishes joint states and
+end-effector topics on every other read. Nothing downstream consumes faster
+than 20 Hz: the GUI updates its model at 10 Hz, system_control edge-detects
+the gripper, the door controller samples force at 20 Hz, and
+`robot_state_publisher` throttles TF to about 27 Hz on its own. Halving the
+wire rate took 10 to 15 points off each of three subscribers.
+
+<Callout type="warning">
+  Lowering a published rate is the one change on this page that a reader can
+  see on the wire. Check every subscriber first, say what you found in the PR,
+  and keep the internal loop at its original rate. Removing a republish of
+  unchanged values is not a rate change and needs no such review.
+</Callout>
+
+**Logs follow the same rule.** A log line per message is a publish per message
+to a slow subscriber. The LUCI gRPC node logged one INFO line per joystick
+message and per camera frame, 200 lines a second, and the `ros2 launch` wrapper
+relaying them cost 12% of a core on its own. Log on change, on error, or with
+`throttle_duration_sec`. If the node is not yours, set its log level in the
+launch file.
+
+## What does not belong here
+
+- **Timers as a substitute for callbacks.** If you have the data in a callback,
+  publish there. A timer is for work that has no natural trigger.
+- **Sleeping in a callback to wait for data.** It blocks an executor thread and
+  the data still arrives through the executor. Subscribe to it instead.
+- **"It is only a small message."** The subscriber's cost is per message, not
+  per byte. A 100 Hz `Bool` costs as much as a 100 Hz `JointState`.
+
+## A module that does this
+
+The base control node in Demo-Software
+(`hardware/rammp_prototype_driver`): a daemon thread blocks in `readline()`,
+`handle_serial_line` publishes joint and chair state when a `TELEMETRY` line
+arrives, and `_send_joystick_keepalive` fills in only when the user has been
+quiet. It went from 93% of a core to 15% with the chair off, and 67% to 17%
+with LUCI connected. See
+[Demo-Software #263](https://github.com/rammp-org/Demo-Software/pull/263).
+
+## Related
+
+- **[An idle node costs nothing](/patterns/idle-nodes-cost-nothing)** — the
+  subscriber's half of the same bargain.
+- **[Measure it on the chair](/patterns/measure-on-the-chair)** — `ros2 topic
+  hz` before and after is the whole test.
