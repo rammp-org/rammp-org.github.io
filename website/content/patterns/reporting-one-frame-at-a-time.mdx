@@ -1,0 +1,94 @@
+---
+title: Reporting one frame at a time
+---
+
+import { Callout } from 'nextra/components'
+
+# Reporting one frame at a time
+
+A perception node answers one question per frame: what did you see in this
+image? The tempting shortcut is to answer with the last thing you saw, so
+consumers always have a value. On the chair that shortcut put a cup outline on
+the GUI after the cup had left the table, and sent the arm to a mouth position
+that the head had moved away from.
+
+Two versions of the same mistake:
+
+- `perceive_cup_info` kept the last detected pose and mask and published them
+  on every call, so the GUI showed a cup that was no longer there.
+- The head-pose smoother rejected any jump larger than its threshold as an
+  outlier. When the user really moved, every subsequent frame was also a jump,
+  so the smoother rejected them all and reported the old position forever.
+
+## The convention
+
+**Every perception message describes one frame, and says whether it found
+anything.**
+
+- **Carry the source frame's stamp.** The `header.stamp` of the output is the
+  stamp of the image it came from, not the time of publishing. A consumer can
+  then tell a fresh answer from a stale one, and look up TF at the right time.
+- **Publish absence explicitly.** When the pipeline finds nothing, publish a
+  message that says so, at the same rate, with `success` false and the pose
+  fields empty or sentinel. The door button detector publishes a `ButtonInfo`
+  on every 5 Hz cycle: real data when the pipeline succeeds, all fields `-1`
+  when any step fails. A consumer that has not heard "nothing" cannot clear.
+- **Do not carry state across frames in the output.** If the grasp planner
+  needs the last good cup pose, keep it inside the node and label it as the
+  last good pose. The published message is what this frame produced.
+- **Process each frame once.** Gate on the frame's stamp so a loop that runs
+  faster than the camera does not re-detect the same image and report it as
+  new confirmation.
+- **Filters reject for a bounded number of frames, then follow.** A smoother
+  may drop one or two outliers. On the third consecutive rejection the input is
+  not an outlier, it is the new truth: clear the history and follow it. The
+  head-pose smoother now does this with `max_rejects=2`.
+
+```python
+if jump > self.jump_threshold_m:
+    self._reject_streak += 1
+    if self._reject_streak <= self.max_rejects:
+        return self._last, True      # hold, once or twice
+    self._buffer.clear()             # sustained: follow the head
+self._reject_streak = 0
+```
+
+<Callout type="warning">
+  "Success false" is a result, not an error. Log it at debug level or not at
+  all. A perception node that warns on every frame without a cup fills the log
+  the moment the cup is put away.
+</Callout>
+
+## What the consumer does with it
+
+The GUI draws what the latest message says and nothing else: a bounding box
+when `success` is true, nothing when it is false. It does not remember the
+last box. A planner that needs a detection waits for a message with `success`
+true and a stamp newer than when it started asking, so a leftover from the
+previous task cannot satisfy it.
+
+## What does not belong here
+
+- **Latching the output topic** (`durability=TRANSIENT_LOCAL`) for detections.
+  Latching is for things that are true until changed, like a calibration. A
+  detection stops being true one frame later.
+- **Hiding a miss by lowering the threshold** until something is always found.
+  A false detection is worse than an honest miss, because the arm acts on it.
+- **Streaming everything you computed.** The cup mask went to the GUI on every
+  frame and slowed it down; the operator needed the box. The message carries
+  what the consumer uses.
+
+## A module that does this
+
+The door button detector in Demo-Software (`demo_modules/cmu_door_opener`)
+has done this from the start: a `ButtonInfo` every cycle with three explicit
+states, no button, detected but not pressable, and pressable with a filtered
+pose. The drink node's `CupInfo` now follows it, with the pose and box of the
+current frame only and `success` false when the cup is out of view.
+
+## Related
+
+- **[Separating bulk data from control traffic](/patterns/separating-bulk-data-from-control-traffic)**
+  — why the message carries the box and not the mask.
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
+  — one message per frame is also the right rate.

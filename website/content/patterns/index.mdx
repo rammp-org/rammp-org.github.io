@@ -24,6 +24,16 @@ uses it.
   — a button press never waits behind video; separate channels, send on
   change, and bound the worst-case frame.
 
+- **[Starting without the hardware](/patterns/starting-without-the-hardware)**
+  — launch order never matters; a missing peer is logged, retried on a timer,
+  and served around, and losing it later is handled the same way.
+- **[Waiting without spinning](/patterns/waiting-without-spinning)** — one
+  executor drives the node; callbacks wait on cached state with a sleep and a
+  deadline, never by spinning or blocking on a terminal.
+- **[Reporting one frame at a time](/patterns/reporting-one-frame-at-a-time)**
+  — perception messages describe one frame, carry its stamp, publish absence
+  explicitly, and filters follow a sustained change.
+
 ## Related
 
 - **[Deploy it](/publishing/deploy)** — the node entry these conventions show

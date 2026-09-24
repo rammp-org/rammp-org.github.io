@@ -1,0 +1,95 @@
+---
+title: Waiting without spinning
+---
+
+import { Callout } from 'nextra/components'
+
+# Waiting without spinning
+
+A ROS 2 node is driven by one executor. Every subscription, timer, service and
+action callback runs because that executor delivered it. The moment code inside
+a callback tries to drive the node itself, delivery stops, and it stops
+silently.
+
+That was the mouth-open failure on the chair in August 2026. A retry loop in
+the camera interface called `rclpy.spin_once(node)` from inside a callback
+while it waited for a transform. `spin_once` on a node that another executor
+owns steals it: the original executor's wait set no longer includes the node,
+and from then on nothing is delivered. Measured on the chair, the node went
+from 49 messages a second to zero, with no error anywhere.
+
+## The convention
+
+**One executor spins the node, and no callback ever spins.** Waiting is done
+against cached state, with a sleep and a deadline.
+
+- **Wait on a cache, not on the executor.** A subscription callback stores the
+  latest message. Code that needs a newer one loops on the cache with a short
+  sleep and a timeout:
+
+  ```python
+  deadline = time.time() + timeout_sec
+  while True:
+      frame = self.camera.get_camera_data()
+      if frame["header"] is not None and stamp_of(frame) != self._last_stamp:
+          self._last_stamp = stamp_of(frame)
+          return frame
+      if time.time() >= deadline:
+          return None
+      time.sleep(0.005)
+  ```
+
+  The executor keeps delivering while this loop sleeps, because the loop is
+  not the executor.
+
+- **Long callbacks get their own callback group.** An action that runs for
+  thirty seconds lives in a `ReentrantCallbackGroup` on a
+  `MultiThreadedExecutor`, so the subscriptions it is waiting on are still
+  serviced by other threads. A `SingleThreadedExecutor` with a blocking action
+  callback is the same bug with a different spelling.
+
+- **Call services asynchronously and wait on the future the same way.**
+  `call_async`, then `while not future.done() and time.time() < deadline:
+  time.sleep(0.05)`. Never `spin_until_future_complete` from a callback; it is
+  `spin_once` in a loop.
+
+- **Every wait has a deadline, and the deadline returns `None`**, not an
+  exception, unless the caller cannot continue. The caller decides whether a
+  missing frame is a skipped sample or a failed action.
+
+- **Never block on a terminal.** The drink node once stopped at an `input()`
+  waiting for a keypress that no container would ever get. A node's only
+  inputs are topics, services, actions and parameters. If an interactive pause
+  is useful on the bench, it is a launch argument that defaults to off.
+
+<Callout type="info">
+  `tf2_ros.TransformListener(buffer, node, spin_thread=True)` runs its own
+  executor on a private node, which is why it is safe: it never touches yours.
+  The default `spin_thread=False` delivers `/tf` through your executor, which
+  is also fine, as long as nothing in your callbacks spins.
+</Callout>
+
+## What does not belong here
+
+- **A helper that "just spins once to refresh".** It is the bug.
+- **Threads that share the node with the executor and call into rclpy** for
+  anything but publishing. Publishing from a thread is safe; creating and
+  destroying subscriptions is safe; spinning is not.
+- **Busy-waiting.** A loop without a sleep pins a core and starves the executor
+  threads it is waiting on.
+
+## A module that does this
+
+The door push controller in Demo-Software (`demo_modules/cmu_door_opener`):
+its `/arm/door/open` action runs in a reentrant group, sends the retract goal
+with `send_goal_async`, and waits for acceptance and for the result with a
+sleep loop and a deadline, checking the cancel flag on each pass. The comment
+in the code says why: "without `rclpy.spin_until_future_complete`". The drink
+node's `_wait_for_new_camera_frame` is the same shape for a camera frame.
+
+## Related
+
+- **[Starting without the hardware](/patterns/starting-without-the-hardware)**
+  — waiting for a peer at startup, which is a timer, not a loop in a callback.
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — the cache these loops read is filled only while a task is running.
