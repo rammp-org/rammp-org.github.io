@@ -38,9 +38,26 @@ idempotent, and call them from whatever marks the start and end of work:
 - **Several overlapping users** share a reference count under a lock. The
   subscriptions come up with the first user and go down with the last.
 
-`stop()` destroys the subscriptions with `destroy_subscription`, calls
-`unregister()` on a `tf2_ros.TransformListener`, and clears the cached data so
-a later reader cannot mistake a stale frame for a fresh one.
+`stop()` takes the subscriptions out of the executor before it destroys them,
+and clears the cached data so a later reader cannot mistake a stale frame for
+a fresh one.
+
+<Callout type="warning">
+  Destroying a subscription is not safe on its own under a
+  `MultiThreadedExecutor`. If the executor has already queued a handler for
+  that subscription, the handler raises `InvalidHandle` from its take when it
+  runs, the exception comes out of `spin()`, and the node dies. The safe order
+  is: give the subscriptions a callback group that answers `can_execute` with
+  `False` once paused, so they leave the wait set and no new handlers are
+  created; wait until no handler is in flight for them; then destroy. A
+  single-threaded node that destroys a subscription from inside its own
+  callback has no second thread to race and needs none of this.
+</Callout>
+
+The same applies to TF. `tf2_ros.TransformListener.unregister()` destroys its
+two subscriptions the unsafe way and offers no way to set their callback
+group, so a node that starts and stops TF subscribes to `/tf` and `/tf_static`
+itself, in the paused group, and feeds the buffer with `set_transform`.
 
 ## Plan for the warm-up
 
@@ -82,25 +99,53 @@ An idle node that follows this page sits under 2% of a core.
 
 ## Minimal example
 
-A stream wrapper with idempotent `start()` and `stop()`, and a detector that
-brings it up from an enable service:
+A callback group that can be paused, a teardown helper that waits for the
+executor, a stream wrapper with idempotent `start()` and `stop()`, and a
+detector that brings it up from an enable service:
 
 ```python
+class PausableCallbackGroup(ReentrantCallbackGroup):
+    """Members leave the executor's wait set while the group is paused."""
+
+    def __init__(self):
+        super().__init__()
+        self.active = True
+
+    def can_execute(self, entity):
+        return self.active and super().can_execute(entity)
+
+
+def destroy_subscriptions(node, group, subscriptions, timeout_sec=2.0):
+    """Pause the group, wait for in-flight handlers, then destroy."""
+    group.active = False
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline and any(
+        getattr(sub, "_executor_event", False) for sub in subscriptions
+    ):
+        time.sleep(0.005)
+    for sub in subscriptions:
+        node.destroy_subscription(sub)
+
+
 class CameraStream:
     def __init__(self, node, topic):
         self._node, self._topic = node, topic
+        self._group = None
         self._sub = None
         self.latest = None
 
     def start(self):
-        if self._sub is None:
-            self._sub = self._node.create_subscription(
-                Image, self._topic, self._on_image, 1)
+        if self._sub is not None:
+            return
+        self._group = PausableCallbackGroup()  # fresh group per start
+        self._sub = self._node.create_subscription(
+            Image, self._topic, self._on_image, 1, callback_group=self._group)
 
     def stop(self):
-        if self._sub is not None:
-            self._node.destroy_subscription(self._sub)
-            self._sub = None
+        if self._sub is None:
+            return
+        destroy_subscriptions(self._node, self._group, [self._sub])
+        self._sub = self._group = None
         self.latest = None  # never serve a stale frame after a restart
 
     def _on_image(self, msg):
