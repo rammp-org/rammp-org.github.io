@@ -1,4 +1,4 @@
 export default {
   index: 'Overview',
-  'remembering-between-runs': 'Remembering between runs'
+  'storing-state-across-runs': 'Storing state across runs'
 }

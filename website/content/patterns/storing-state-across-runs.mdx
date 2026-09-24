@@ -1,10 +1,10 @@
 ---
-title: Remembering between runs
+title: Storing state across runs
 ---
 
 import { Callout } from 'nextra/components'
 
-# Remembering between runs
+# Storing state across runs
 
 A container starts from its image every time. Whatever your node wrote to its
 own filesystem is gone the next time sheppy launches it. Most of the time that is what you want: the manifest
@@ -18,8 +18,8 @@ for keeping a value like that across runs without giving up the clean start.
 ## The convention
 
 Keep the value in a file on the chair's disk, in a directory the manifest
-mounts into the container. The file is the module's memory. The container is
-still disposable; the memory lives outside it.
+mounts into the container. The file holds the module's state. The container is
+still disposable; the state lives outside it.
 
 **On the host.** One directory per module, under the operator's config
 directory:
@@ -53,7 +53,7 @@ holds. A person should be able to open it and know what it is.
 {"r_align_euler_zyx_deg": [131.18, -2.96, 91.02]}
 ```
 
-## The memory can be wiped at any time
+## The state can be cleared at any time
 
 Treat the file as a cache, not as a record. Any of these clear it:
 
@@ -68,8 +68,8 @@ Treat the file as a cache, not as a record. Any of these clear it:
 So the node has to work with no file, and work with a file it cannot read.
 
 - **A missing file is the normal first run.** Fall back to the YAML defaults,
-  log that you did, and carry on. Never fail to start because the memory is
-  empty.
+  log that you did, and carry on. Never fail to start because the file is
+  missing.
 - **A file you cannot parse is the same as a missing file.** Log it, ignore
   it, and overwrite it the next time you have a value. Do not crash on it.
 - **The value must be recoverable in session.** Whatever wrote the file the
@@ -80,7 +80,7 @@ So the node has to work with no file, and work with a file it cannot read.
   sheppy log answers the first question anyone asks when behavior looks stale.
 
 <Callout type="warning">
-  The memory is per chair and per directory, not per module version. When you
+  The state is per chair and per directory, not per module version. When you
   change the shape of the file, read the old shape too or treat it as
   unreadable. Do not assume the file on the chair was written by the code that
   is reading it.
@@ -108,7 +108,7 @@ with the same gesture that wrote it in the first place.
 
 - **Anything the YAML can hold.** A tuning constant that does not change on the
   chair goes in the package config, where it is versioned and reviewed.
-- **Logs and recordings.** Those are output, not memory.
+- **Logs and recordings.** Those are output, not state.
 - **Secrets.** The adb key lives in `~/.android` because adb puts it there,
   not because this pattern does.
 - **Anything large.** The file should be small enough to read in a log line.
