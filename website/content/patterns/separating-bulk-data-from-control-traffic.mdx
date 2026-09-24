@@ -1,0 +1,101 @@
+---
+title: Separating bulk data from control traffic
+---
+
+import { Callout } from 'nextra/components'
+
+# Separating bulk data from control traffic
+
+A button press has to reach the robot within tens of milliseconds. A video
+frame can be a frame late and nobody notices. When both travel through the
+same queue, the frames win, because there are more of them. This page is the
+convention for keeping control traffic out from behind bulk data.
+
+## The convention
+
+Latency-sensitive messages get their own channel. Bulk data is sent only when
+it changed, only when someone can see it, and only at the size the consumer
+needs.
+
+**Separate channels.** A bridge to a GUI or a remote peer holds one
+connection for events and commands and another for bulk data. A press on the
+event connection never waits behind a call on the other.
+
+**Bulk data on change, sized for the consumer.**
+
+- Send a value when it changed, with a slow refresh so a late consumer still
+  gets it. A joint array goes out when a joint moved; a state goes out when it
+  changed.
+- Send what the consumer looks at. An operator watching for a detection needs
+  the bounding box, not the segmentation mask behind it.
+- Rendering has a budget as well. A GUI that draws 15 Hz camera feeds does not
+  need to render faster than that.
+
+**One process per kind of traffic.** The GIL makes a Python process that
+copies tens of megabytes a second of video into a socket a poor place to also
+answer a service call. When a node has to do both, the video path belongs in
+its own process, or at least its own thread with the work done in C (a `cv2`
+call, a socket send) so the GIL is released.
+
+**Bound the worst case, not the average.** When a per-frame algorithm's cost
+depends on the input, cap the input: subsample a point cloud above a fixed
+size, crop to a region, drop to a fixed resolution. Test on the largest input
+the camera can produce, and keep a recorded bag of that input in the repo so
+the check can be repeated.
+
+<Callout type="info">
+  Do the structural fix first, then trim the volume. Splitting the channel
+  removes the lag by itself; sending less is what keeps it from coming back.
+</Callout>
+
+## Minimal example
+
+A GUI bridge with a receive-only connection for button events, a command
+connection for everything sent to the GUI, and state pushed on change with a
+two-second refresh:
+
+```python
+class GuiBridge(Node):
+    def __init__(self):
+        super().__init__("gui_bridge")
+        self._events = websocket.create_connection(GUI_URL)    # receive only
+        self._commands = websocket.create_connection(GUI_URL)  # send and reply
+        self._last_sent = {}
+        self._button_pub = self.create_publisher(UserInput, "user_input", 10)
+        threading.Thread(target=self._event_loop, daemon=True).start()
+        self.create_timer(0.1, self._push_state)
+
+    def _event_loop(self):
+        while rclpy.ok():
+            # Nothing else is ever sent or received on this socket.
+            self._button_pub.publish(parse_event(self._events.recv()))
+
+    def _push_state(self):
+        self._send_if_changed("joints", self._joint_positions())
+        self._send_if_changed("state", self._system_state())
+
+    def _send_if_changed(self, key, value, refresh_s=2.0):
+        last, sent_at = self._last_sent.get(key, (None, 0.0))
+        now = time.monotonic()
+        if value != last or now - sent_at >= refresh_s:
+            self._commands.send(encode(key, value))
+            self._commands.recv()  # the reply queues here, never behind a press
+            self._last_sent[key] = (value, now)
+```
+
+Video frames go to the GUI through a third path in their own process.
+
+## What does not belong here
+
+- **A higher priority for the control path.** Priorities do not help when both
+  paths share one queue in another process.
+- **A bigger queue.** It moves the lag; it does not remove it.
+- **Compression of the bulk stream on the thread that handles control.** The
+  compression is then what the press waits behind.
+
+## Related
+
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
+  — the rules that keep the bulk stream small in the first place.
+- **[Reporting one frame at a time](/patterns/reporting-one-frame-at-a-time)**
+  — why the detection message carries the box and not the mask.

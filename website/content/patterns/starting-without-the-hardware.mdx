@@ -1,0 +1,115 @@
+---
+title: Starting without the hardware
+---
+
+import { Callout } from 'nextra/components'
+
+# Starting without the hardware
+
+Sheppy brings every node up at once. The arm takes a minute to boot, the
+RealSense re-enumerates after the arm's USB hub, and the LUCI chair sleeps on
+its own and wakes when someone touches it. A node that needs one of those
+cannot assume it is there when the node starts, or that it stays there, and
+sheppy does not respawn a node that exits. This page is the convention for a
+node whose hardware is not there yet.
+
+## The convention
+
+Launch order does not matter. A node starts, says what it is waiting for, and
+keeps waiting.
+
+- **Wait without a deadline, and say so on a schedule.** Log once that the
+  peer is missing, then a reminder every 10 s or so with the topic or address
+  you are waiting on.
+- **Retry on a timer that cancels itself.** Connect from a timer created in
+  `__init__`, and cancel the timer the first time it succeeds. The node is up
+  and its services exist, so the rest of the system can discover it in the
+  meantime.
+- **Serve what you can while you wait.** Publish your status topic at 1 Hz
+  from the start so the system can show "arm: not connected" rather than
+  "arm: missing". Answer commands with a clear rejection ("arm not connected")
+  rather than a timeout.
+- **Treat losing the peer like never having had it.** A watchdog that stops
+  hearing from the peer puts the node back into its waiting state, and the
+  same retry brings it back. The operator does not restart the node.
+- **Never exit because a peer is absent.** Nobody on the chair is watching
+  for an exit code, and sheppy will not restart the node.
+
+<Callout type="warning">
+  Do not confuse this with tolerating a *broken* peer. A camera that publishes
+  garbage or an arm that reports a fault is an error to report loudly, not a
+  peer to wait for. The distinction is whether the operator can fix it by
+  turning something on.
+</Callout>
+
+## What the system does with it
+
+`system_control` decides the chair is ready only when every expected node is
+present and the base's diagnostics report LUCI and the Teensy connected. While
+something is missing it logs the list every 5 s, and the GUI shows the system
+as initialising. Your node's waiting state feeds that summary: the operator
+sees one line, not a stack trace in one container's log.
+
+## Minimal example
+
+A driver that connects from a self-cancelling timer, reports its status from
+the first second, rejects commands until connected, and goes back to waiting
+when the connection drops:
+
+```python
+class ArmDriver(Node):
+    def __init__(self):
+        super().__init__("arm_driver")
+        self._ip = self.get_parameter("ip").value
+        self._arm = None
+        self._attempts = 0
+        self._status_pub = self.create_publisher(ArmStatus, "~/status", 10)
+        self.create_service(Trigger, "~/home", self._on_home)
+        self._connect_timer = self.create_timer(0.5, self._try_connect)
+        self.create_timer(1.0, self._publish_status)
+
+    def _try_connect(self):
+        try:
+            self._arm = KortexClient(self._ip)
+        except ConnectionError:
+            self._attempts += 1
+            if self._attempts % 20 == 1:  # once, then every 10 s
+                self.get_logger().warning(
+                    f"Arm not reachable at {self._ip}. Is it powered on?")
+            return
+        self._attempts = 0
+        self._connect_timer.cancel()
+        self.get_logger().info("Arm connected")
+
+    def _publish_status(self):
+        msg = ArmStatus()
+        msg.connected = self._arm is not None
+        self._status_pub.publish(msg)
+
+    def _on_home(self, request, response):
+        if self._arm is None:
+            response.success = False
+            response.message = "arm not connected"
+            return response
+        ...
+
+    def _on_feedback_timeout(self):  # called by the comms watchdog
+        self._arm = None
+        self._connect_timer.reset()  # back to waiting, same as at startup
+```
+
+## What does not belong here
+
+- **A long `time.sleep()` at startup** to let the hardware come up. It is a
+  guess, it is wrong on the day the camera takes longer, and it delays the
+  nodes that were ready.
+- **Retrying inside a callback.** See
+  [Waiting without spinning](/patterns/waiting-without-spinning).
+- **An exit that relies on sheppy to respawn the node.** It does not.
+
+## Related
+
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — the subscriptions you wait for are also the ones you drop when idle.
+- **[Storing state across runs](/patterns/storing-state-across-runs)** — the
+  same "missing is normal" rule, applied to a file instead of a device.
