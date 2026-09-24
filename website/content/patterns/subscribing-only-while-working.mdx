@@ -6,15 +6,10 @@ import { Callout } from 'nextra/components'
 
 # Subscribing only while working
 
-Most of the chair's nodes spend most of their time waiting. The door opener
-waits for a door, the drink node waits for an order, the detector waits to be
-enabled. A node that keeps its camera, arm-state and TF subscriptions open
-while it waits pays for every message that arrives, whether or not anything
-reads it. Across the chair, those idle subscriptions were costing more than
-four of the Jetson's eight cores.
-
-This page is the convention for what a node may subscribe to while nothing
-has asked it to work.
+A node that keeps its camera, arm-state and TF subscriptions open while it
+waits for work pays for every message that arrives, whether or not anything
+reads it. This page is the convention for what a node may subscribe to while
+nothing has asked it to work.
 
 ## Why a message is not free
 
@@ -37,31 +32,11 @@ Give each interface that wraps a stream a `start()` and a `stop()`, both
 idempotent, and call them from whatever marks the start and end of work:
 
 - **An enable service** creates the subscriptions on `True` and destroys them
-  on `False`. The door button detector does this in its
-  `/arm/door/detection/enable` handler, for the RGB and depth images, both
-  `camera_info` topics and its `TransformListener`.
+  on `False`.
 - **An action** creates them when the goal is accepted and destroys them in a
-  `finally` block, so a cancel or an exception also releases them. The door
-  push controller subscribes to the arm's 100 Hz force and velocity topics for
-  the length of one `/arm/door/open` goal.
+  `finally` block, so a cancel or an exception also releases them.
 - **Several overlapping users** share a reference count under a lock. The
   subscriptions come up with the first user and go down with the last.
-
-```python
-def _acquire_sensors(self):
-    with self._sensor_lock:
-        self._sensor_users += 1
-        if self._sensor_users == 1:
-            self.camera.start()
-            self.arm.start()
-
-def _release_sensors(self):
-    with self._sensor_lock:
-        self._sensor_users -= 1
-        if self._sensor_users == 0:
-            self.camera.stop()
-            self.arm.stop()
-```
 
 `stop()` destroys the subscriptions with `destroy_subscription`, calls
 `unregister()` on a `tf2_ros.TransformListener`, and clears the cached data so
@@ -86,14 +61,12 @@ The delays are small, but the code has to expect them:
   subscribed for the life of the node.
 
 A reader of the cache skips the sample when the cache is empty; it does not
-raise. `perceive_cup_info` in the drink node does `continue` when no frame has
-arrived. Before that guard, the first two streaming ticks after enable each
-logged an exception.
+raise.
 
 <Callout type="info">
-  Keep a warm start if the first real call has to be fast. The drink node runs
-  MediaPipe on ten frames at launch so the first mouth detection is not a cold
-  model load. It calls `start()` for that, and `stop()` right after.
+  Keep a warm start if the first real call has to be fast. A node that loads a
+  model can run it on a few frames at launch so the first real detection is
+  not a cold start. It calls `start()` for that, and `stop()` right after.
 </Callout>
 
 ## What still costs something
@@ -107,20 +80,71 @@ Two things remain after the subscriptions are gone, and both are cheap:
 
 An idle node that follows this page sits under 2% of a core.
 
-## A module that does this
+## Minimal example
 
-The drink node in Demo-Software (`demo_modules/cornell_feeding`):
+A stream wrapper with idempotent `start()` and `stop()`, and a detector that
+brings it up from an enable service:
 
-- Its camera interface and arm client each expose `start()` and `stop()`.
-- The action server reference-counts them around every action and around
-  cup-handle streaming, with the `_acquire_sensors` and `_release_sensors`
-  pair above.
-- The head-perception warm start calls `start()` for itself and `stop()`
-  right after.
+```python
+class CameraStream:
+    def __init__(self, node, topic):
+        self._node, self._topic = node, topic
+        self._sub = None
+        self.latest = None
 
-Idle, the node went from 58% of a core to under 1%. See
-[Demo-Software #263](https://github.com/rammp-org/Demo-Software/pull/263) for
-the measurements on the other nodes.
+    def start(self):
+        if self._sub is None:
+            self._sub = self._node.create_subscription(
+                Image, self._topic, self._on_image, 1)
+
+    def stop(self):
+        if self._sub is not None:
+            self._node.destroy_subscription(self._sub)
+            self._sub = None
+        self.latest = None  # never serve a stale frame after a restart
+
+    def _on_image(self, msg):
+        self.latest = msg
+
+
+class Detector(Node):
+    def __init__(self):
+        super().__init__("detector")
+        self.camera = CameraStream(self, "/camera/color/image_raw")
+        self.create_service(SetBool, "~/enable", self._on_enable)
+        self.create_timer(0.2, self._tick)  # 5 Hz, returns at once when idle
+
+    def _on_enable(self, request, response):
+        if request.data:
+            self.camera.start()
+        else:
+            self.camera.stop()
+        response.success = True
+        return response
+
+    def _tick(self):
+        frame = self.camera.latest
+        if frame is None:  # disabled, or the first frame is not here yet
+            return
+        self.process(frame)
+```
+
+When more than one action or service can be running at once, replace the
+enable handler with a reference count:
+
+```python
+def _acquire_sensors(self):
+    with self._sensor_lock:
+        self._sensor_users += 1
+        if self._sensor_users == 1:
+            self.camera.start()
+
+def _release_sensors(self):
+    with self._sensor_lock:
+        self._sensor_users -= 1
+        if self._sensor_users == 0:
+            self.camera.stop()
+```
 
 ## What does not belong here
 
@@ -128,8 +152,7 @@ the measurements on the other nodes.
   Python still pays the executor cost for all ten. Either the publisher sends
   less, or the subscriber is not there.
 - **A subscription kept open so the data is buffered and ready.** The buffer
-  costs more than the 70 ms it saves, and the first frame after enable
-  arrives before anyone can notice.
+  costs more than the 70 ms it saves.
 - **Polling `rclpy.spin_once` from a callback** to fetch fresh data. It
   detaches the node from its executor and delivery stops. See
   [Waiting without spinning](/patterns/waiting-without-spinning).

@@ -8,17 +8,8 @@ import { Callout } from 'nextra/components'
 
 A button press has to reach the robot within tens of milliseconds. A video
 frame can be a frame late and nobody notices. When both travel through the
-same queue, the frames win, because there are more of them.
-
-The GUI bridge showed the failure. After half a minute of streaming drink
-detection, a press of **Confirm** took several seconds to reach the arm. The
-bridge was sending about 30 Remote Control calls a second to Unreal over the
-same websocket Unreal used to deliver button events. Unreal serves one
-connection's messages in order, roughly one per rendered frame, so the press
-queued behind hundreds of unanswered calls.
-
-This page is the convention for keeping control traffic out from behind bulk
-data.
+same queue, the frames win, because there are more of them. This page is the
+convention for keeping control traffic out from behind bulk data.
 
 ## The convention
 
@@ -26,54 +17,73 @@ Latency-sensitive messages get their own channel. Bulk data is sent only when
 it changed, only when someone can see it, and only at the size the consumer
 needs.
 
-**Separate channels.** The bridge opens two websockets to Unreal: a
-receive-only connection that registers the preset and delivers `UserInput`
-events, and a command connection for calls and their responses. A press never
-waits behind a call.
+**Separate channels.** A bridge to a GUI or a remote peer holds one
+connection for events and commands and another for bulk data. A press on the
+event connection never waits behind a call on the other.
 
 **Bulk data on change, sized for the consumer.**
 
-- The bridge sends joint arrays to Unreal only when a joint moved, and the
-  system state only when it changed, each with a 2 s refresh. Idle traffic to
-  the GUI fell from 40 KB/s to 5 KB/s, and the GUI's own CPU fell with it.
-- The drink node used to stream its segmentation mask to the GUI on every
-  frame, and the GUI could not keep up. It now sends the bounding box, which
-  is what the operator looks at.
-- Rendering has a budget as well. Unreal uncapped used two cores and the whole
-  GPU to draw a mostly static screen. Capped at 25 fps it draws the same 15 Hz
-  camera feeds at a third of the cost.
+- Send a value when it changed, with a slow refresh so a late consumer still
+  gets it. A joint array goes out when a joint moved; a state goes out when it
+  changed.
+- Send what the consumer looks at. An operator watching for a detection needs
+  the bounding box, not the segmentation mask behind it.
+- Rendering has a budget as well. A GUI that draws 15 Hz camera feeds does not
+  need to render faster than that.
 
 **One process per kind of traffic.** The GIL makes a Python process that
-copies 35 MB/s of video into a socket a poor place to also answer a service
-call. When a node has to do both, the video path belongs in its own process,
-or at least its own thread with the work done in C (a `cv2` call, a socket
-send) so the GIL is released.
+copies tens of megabytes a second of video into a socket a poor place to also
+answer a service call. When a node has to do both, the video path belongs in
+its own process, or at least its own thread with the work done in C (a `cv2`
+call, a socket send) so the GIL is released.
 
-**Bound the worst case, not the average.** Cup detection ran DBSCAN over every
-valid depth pixel. A typical frame took a second; a close-up of the cup took
-18 seconds, during which the node answered nothing. Grid-subsampling above
-4,000 points brought the worst frame to 330 ms with poses identical to
-0.2 mm. When a per-frame algorithm's cost depends on the input, test it on
-the largest input the camera can produce, and keep a recorded bag of that
-input in the repo so the check can be repeated.
+**Bound the worst case, not the average.** When a per-frame algorithm's cost
+depends on the input, cap the input: subsample a point cloud above a fixed
+size, crop to a region, drop to a fixed resolution. Test on the largest input
+the camera can produce, and keep a recorded bag of that input in the repo so
+the check can be repeated.
 
 <Callout type="info">
   Do the structural fix first, then trim the volume. Splitting the channel
-  removed the lag by itself; sending less is what keeps it from coming back.
+  removes the lag by itself; sending less is what keeps it from coming back.
 </Callout>
 
-## A module that does this
+## Minimal example
 
-The GUI bridge in Demo-Software (`core/rammp_prototype_gui`):
+A GUI bridge with a receive-only connection for button events, a command
+connection for everything sent to the GUI, and state pushed on change with a
+two-second refresh:
 
-- A second websocket for `UserInput` events.
-- Calls to Unreal sent on change, with a periodic refresh.
-- Video frames forwarded as they arrive from the cameras, on their own path.
+```python
+class GuiBridge(Node):
+    def __init__(self):
+        super().__init__("gui_bridge")
+        self._events = websocket.create_connection(GUI_URL)    # receive only
+        self._commands = websocket.create_connection(GUI_URL)  # send and reply
+        self._last_sent = {}
+        self._button_pub = self.create_publisher(UserInput, "user_input", 10)
+        threading.Thread(target=self._event_loop, daemon=True).start()
+        self.create_timer(0.1, self._push_state)
 
-The press that took 5 to 8 seconds now arrives in 11 ms. See
-[Demo-Software #258](https://github.com/rammp-org/Demo-Software/issues/258) for
-the measurements and
-[#259](https://github.com/rammp-org/Demo-Software/pull/259) for the change.
+    def _event_loop(self):
+        while rclpy.ok():
+            # Nothing else is ever sent or received on this socket.
+            self._button_pub.publish(parse_event(self._events.recv()))
+
+    def _push_state(self):
+        self._send_if_changed("joints", self._joint_positions())
+        self._send_if_changed("state", self._system_state())
+
+    def _send_if_changed(self, key, value, refresh_s=2.0):
+        last, sent_at = self._last_sent.get(key, (None, 0.0))
+        now = time.monotonic()
+        if value != last or now - sent_at >= refresh_s:
+            self._commands.send(encode(key, value))
+            self._commands.recv()  # the reply queues here, never behind a press
+            self._last_sent[key] = (value, now)
+```
+
+Video frames go to the GUI through a third path in their own process.
 
 ## What does not belong here
 

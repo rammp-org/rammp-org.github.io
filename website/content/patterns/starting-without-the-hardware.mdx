@@ -7,17 +7,11 @@ import { Callout } from 'nextra/components'
 # Starting without the hardware
 
 Sheppy brings every node up at once. The arm takes a minute to boot, the
-RealSense re-enumerates after the arm's USB hub, and the LUCI chair goes to
-sleep on its own and wakes when someone touches it. A node that needs one of
-those cannot assume it is there when the node starts, or that it stays there.
-
-The drink node used to raise after a short wait for the wrist camera, so it
-died whenever it was launched before the camera. The LUCI gRPC node still
-exits when the chair does not answer within its connection timeout, and since
-sheppy does not respawn a node that exits, the chair stays undriveable until
-someone restarts the node by hand.
-
-This page is the convention for a node whose hardware is not there yet.
+RealSense re-enumerates after the arm's USB hub, and the LUCI chair sleeps on
+its own and wakes when someone touches it. A node that needs one of those
+cannot assume it is there when the node starts, or that it stays there, and
+sheppy does not respawn a node that exits. This page is the convention for a
+node whose hardware is not there yet.
 
 ## The convention
 
@@ -26,21 +20,18 @@ keeps waiting.
 
 - **Wait without a deadline, and say so on a schedule.** Log once that the
   peer is missing, then a reminder every 10 s or so with the topic or address
-  you are waiting on. The drink node waits for
-  `/camera/wrist/color/image_raw` and logs "Is the wrist RealSense running?"
-  every 10 s until it arrives.
-- **Retry on a timer that cancels itself.** The arm driver tries to connect to
-  the Kortex arm at 2 Hz from a timer created in `__init__`, and cancels the
-  timer the first time it succeeds. The node is up and its services exist, so
-  the rest of the system can discover it in the meantime.
+  you are waiting on.
+- **Retry on a timer that cancels itself.** Connect from a timer created in
+  `__init__`, and cancel the timer the first time it succeeds. The node is up
+  and its services exist, so the rest of the system can discover it in the
+  meantime.
 - **Serve what you can while you wait.** Publish your status topic at 1 Hz
   from the start so the system can show "arm: not connected" rather than
   "arm: missing". Answer commands with a clear rejection ("arm not connected")
   rather than a timeout.
-- **Treat losing the peer like never having had it.** The arm driver's comms
-  watchdog moves to `ERROR` after 0.5 s without feedback, and a `clear_error`
-  service brings it back once the arm answers again. The operator does not
-  restart the node.
+- **Treat losing the peer like never having had it.** A watchdog that stops
+  hearing from the peer puts the node back into its waiting state, and the
+  same retry brings it back. The operator does not restart the node.
 - **Never exit because a peer is absent.** Nobody on the chair is watching
   for an exit code, and sheppy will not restart the node.
 
@@ -59,15 +50,53 @@ something is missing it logs the list every 5 s, and the GUI shows the system
 as initialising. Your node's waiting state feeds that summary: the operator
 sees one line, not a stack trace in one container's log.
 
-## A module that does this
+## Minimal example
 
-The arm driver in Demo-Software (`hardware/arm_driver`):
+A driver that connects from a self-cancelling timer, reports its status from
+the first second, rejects commands until connected, and goes back to waiting
+when the connection drops:
 
-- A 2 Hz connect timer, created in `__init__`, that cancels itself once the
-  arm answers.
-- A 1 Hz status topic from the first second.
-- Commands rejected with "not connected" until the arm answers.
-- A watchdog that turns a lost connection into a recoverable `ERROR` state.
+```python
+class ArmDriver(Node):
+    def __init__(self):
+        super().__init__("arm_driver")
+        self._ip = self.get_parameter("ip").value
+        self._arm = None
+        self._attempts = 0
+        self._status_pub = self.create_publisher(ArmStatus, "~/status", 10)
+        self.create_service(Trigger, "~/home", self._on_home)
+        self._connect_timer = self.create_timer(0.5, self._try_connect)
+        self.create_timer(1.0, self._publish_status)
+
+    def _try_connect(self):
+        try:
+            self._arm = KortexClient(self._ip)
+        except ConnectionError:
+            self._attempts += 1
+            if self._attempts % 20 == 1:  # once, then every 10 s
+                self.get_logger().warning(
+                    f"Arm not reachable at {self._ip}. Is it powered on?")
+            return
+        self._attempts = 0
+        self._connect_timer.cancel()
+        self.get_logger().info("Arm connected")
+
+    def _publish_status(self):
+        msg = ArmStatus()
+        msg.connected = self._arm is not None
+        self._status_pub.publish(msg)
+
+    def _on_home(self, request, response):
+        if self._arm is None:
+            response.success = False
+            response.message = "arm not connected"
+            return response
+        ...
+
+    def _on_feedback_timeout(self):  # called by the comms watchdog
+        self._arm = None
+        self._connect_timer.reset()  # back to waiting, same as at startup
+```
 
 ## What does not belong here
 

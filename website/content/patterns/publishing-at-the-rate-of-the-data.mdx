@@ -9,15 +9,8 @@ import { Callout } from 'nextra/components'
 A publisher decides how much every subscriber pays. On the Orin, each message
 costs a Python subscriber 1.5 to 2 ms whether or not the value changed, so a
 node that republishes the same numbers from a fast timer spends other nodes'
-CPU as well as its own.
-
-The base control node is the example to keep in mind. Its Teensy sends
-telemetry at a fixed 10 Hz. The node polled the serial port from a 1 kHz
-timer, republished joint and chair state from two 100 Hz timers, and sent the
-LUCI joystick from a 200 Hz timer. Most of a core went to relaying 10 Hz of
-data.
-
-This page is the convention for how often a node reads, publishes and logs.
+CPU as well as its own. This page is the convention for how often a node
+reads, publishes and logs.
 
 ## The convention
 
@@ -29,41 +22,25 @@ it at that rate and publish it when it arrives.
   `in_waiting` a thousand times a second wakes a thousand times a second.
 - **Publish on arrival.** When telemetry comes in, convert it and publish it
   in the same callback. Do not cache it for a timer to re-send.
-- **Gate loops on a new stamp.** Head perception ran MediaPipe 240 times a
-  second on a 15 Hz camera until it started comparing the frame's header stamp
-  with the last one it processed.
+- **Gate loops on a new stamp.** A processing loop that runs faster than its
+  camera compares the frame's header stamp with the last one it processed and
+  returns when they match.
 
 **State goes out on change, with a slow keepalive.** State that changes
-rarely, such as the system state machine or the set of allowed GUI commands,
-is published when it changes and then once a second, so a late subscriber
-still gets it and a consumer can tell a quiet publisher from a dead one. The
-timer that checks for a change can run at 10 Hz; the message does not.
-
-```python
-def publish_system_state(self):
-    msg = self._build_state()
-    key = (msg.state, list(msg.supported_user_inputs))
-    now = time.monotonic()
-    if key != self._last_published or now - self._last_publish_time >= 1.0:
-        self._pub.publish(msg)
-        self._last_published = key
-        self._last_publish_time = now
-```
+rarely, such as a state machine or the set of allowed commands, is published
+when it changes and then once a second, so a late subscriber still gets it
+and a consumer can tell a quiet publisher from a dead one. The timer that
+checks for a change can run at 10 Hz; the message does not.
 
 **Inputs are forwarded as they arrive, and the keepalive skips a tick when
-something was just sent.** The LUCI chair needs its remote joystick above
-10 Hz or it engages the brakes. The base node forwards the user's joystick the
-moment it arrives and runs a 50 Hz keepalive that skips its tick when
-something went out in the last period. The user's input has no added latency,
-and an autonomous drive command waits at most 20 ms.
+something was just sent.** A device that needs its input above some rate gets
+the user's input the moment it arrives, plus a keepalive that only fills the
+gaps. The input has no added latency and the wire carries no duplicates.
 
 **The wire rate is chosen for the consumers.** A feedback loop can run faster
-than it publishes. The arm driver reads the Kortex arm at 100 Hz because its
-collision check and comms watchdog need that, and publishes joint states and
-end-effector topics on every other read. Nothing downstream consumes faster
-than 20 Hz: the GUI updates its model at 10 Hz, system_control edge-detects
-the gripper, the door controller samples force at 20 Hz, and
-`robot_state_publisher` throttles TF on its own.
+than it publishes. A driver that reads its hardware at 100 Hz for its own
+watchdog and collision check publishes on every Nth read, at the rate the
+fastest subscriber uses.
 
 <Callout type="warning">
   Lowering a published rate is the one change on this page that a subscriber
@@ -73,25 +50,44 @@ the gripper, the door controller samples force at 20 Hz, and
 </Callout>
 
 **Logs follow the same rule.** A log line per message is a publish per message
-to a slow subscriber. The LUCI gRPC node logged one INFO line per joystick
-message and per camera frame, and the `ros2 launch` wrapper relaying those
-lines cost 12% of a core on its own. Log on change, on error, or with
-`throttle_duration_sec`. If the node is not yours, set its log level in the
-launch file.
+to a slow subscriber, and the `ros2 launch` wrapper that relays it pays too.
+Log on change, on error, or with `throttle_duration_sec`. If the node is not
+yours, set its log level in the launch file.
 
-## A module that does this
+## Minimal example
 
-The base control node in Demo-Software (`hardware/rammp_prototype_driver`):
+A serial bridge that blocks on the port, publishes telemetry on arrival, and
+publishes its state on change with a one-second keepalive:
 
-- A daemon thread blocks in `readline()` on the Teensy's serial port.
-- `handle_serial_line` publishes joint and chair state when a `TELEMETRY`
-  line arrives.
-- `_send_joystick_keepalive` sends only when the user has been quiet for a
-  period.
+```python
+class Bridge(Node):
+    def __init__(self):
+        super().__init__("bridge")
+        self._port = serial.Serial("/dev/ttyACM0", 115200)
+        self._telemetry_pub = self.create_publisher(JointState, "joint_states", 10)
+        self._state_pub = self.create_publisher(SystemState, "system_state", 10)
+        self._last_state = None
+        self._last_state_time = 0.0
+        threading.Thread(target=self._read_loop, daemon=True).start()
+        self.create_timer(0.1, self._publish_state)  # checks at 10 Hz
 
-With the chair off, the node went from 93% of a core to 15%. See
-[Demo-Software #263](https://github.com/rammp-org/Demo-Software/pull/263) for
-the rest of the measurements.
+    def _read_loop(self):
+        while rclpy.ok():
+            line = self._port.readline()  # wakes only when the device sends
+            self._telemetry_pub.publish(parse_telemetry(line))
+
+    def _publish_state(self):
+        msg = self._build_state()
+        key = (msg.state, tuple(msg.supported_user_inputs))
+        now = time.monotonic()
+        if key != self._last_state or now - self._last_state_time >= 1.0:
+            self._state_pub.publish(msg)  # on change, or once a second
+            self._last_state = key
+            self._last_state_time = now
+```
+
+Publishing from the reader thread is safe; spinning from it is not. See
+[Waiting without spinning](/patterns/waiting-without-spinning).
 
 ## What does not belong here
 

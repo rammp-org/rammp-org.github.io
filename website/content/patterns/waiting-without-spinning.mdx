@@ -8,17 +8,10 @@ import { Callout } from 'nextra/components'
 
 A ROS 2 node is driven by one executor. Every subscription, timer, service and
 action callback runs because that executor delivered it. When code inside a
-callback tries to drive the node itself, delivery stops, and nothing reports
-it.
-
-The mouth-open failure on the chair was this. A retry loop in the camera
-interface called `rclpy.spin_once(node)` from inside a callback while it
-waited for a transform. `spin_once` on a node that another executor owns
-takes the node over: the original executor's wait set no longer includes it,
-and from then on nothing is delivered. Measured on the chair, the node went
-from 49 messages a second to zero, with no error anywhere.
-
-This page is the convention for waiting inside a callback.
+callback drives the node itself, with `rclpy.spin_once` or
+`spin_until_future_complete`, it takes the node over: the original executor's
+wait set no longer includes it, and from then on nothing is delivered, with no
+error anywhere. This page is the convention for waiting inside a callback.
 
 ## The convention
 
@@ -27,41 +20,22 @@ to wait waits on cached state, with a sleep and a deadline.
 
 - **Wait on a cache, not on the executor.** A subscription callback stores the
   latest message. Code that needs a newer one loops on the cache with a short
-  sleep and a timeout:
-
-  ```python
-  deadline = time.time() + timeout_sec
-  while True:
-      frame = self.camera.get_camera_data()
-      if frame["header"] is not None and stamp_of(frame) != self._last_stamp:
-          self._last_stamp = stamp_of(frame)
-          return frame
-      if time.time() >= deadline:
-          return None
-      time.sleep(0.005)
-  ```
-
-  The executor keeps delivering while this loop sleeps, because the loop is
-  not the executor.
-
+  sleep and a timeout. The executor keeps delivering while the loop sleeps,
+  because the loop is not the executor.
 - **Long callbacks get their own callback group.** An action that runs for
   thirty seconds lives in a `ReentrantCallbackGroup` on a
   `MultiThreadedExecutor`, so the subscriptions it is waiting on are still
   serviced by other threads. A `SingleThreadedExecutor` with a blocking action
   callback has the same problem.
-
 - **Call services asynchronously and wait on the future the same way.**
   `call_async`, then poll `future.done()` with a sleep and a deadline. Never
   `spin_until_future_complete` from a callback; it spins.
-
 - **Every wait has a deadline, and the deadline returns `None`**, not an
   exception, unless the caller cannot continue. The caller decides whether a
   missing frame is a skipped sample or a failed action.
-
-- **Never block on a terminal.** The drink node once stopped at an `input()`
-  waiting for a keypress that no container would ever get. A node's only
-  inputs are topics, services, actions and parameters. If an interactive pause
-  is useful on the bench, it is a launch argument that defaults to off.
+- **Never block on a terminal.** A node's only inputs are topics, services,
+  actions and parameters. If an interactive pause is useful on the bench, it
+  is a launch argument that defaults to off.
 
 <Callout type="info">
   `tf2_ros.TransformListener(buffer, node, spin_thread=True)` runs its own
@@ -70,17 +44,56 @@ to wait waits on cached state, with a sleep and a deadline.
   is also fine, as long as nothing in your callbacks spins.
 </Callout>
 
-## A module that does this
+## Minimal example
 
-The door push controller in Demo-Software (`demo_modules/cmu_door_opener`):
+An action that waits for a fresh camera frame and for a service reply, both
+with a sleep loop and a deadline, on a multi-threaded executor:
 
-- Its `/arm/door/open` action runs in a `ReentrantCallbackGroup`.
-- It sends the retract goal with `send_goal_async` and waits for acceptance
-  and for the result with a sleep loop and a deadline, checking the cancel
-  flag on each pass.
+```python
+class Opener(Node):
+    def __init__(self):
+        super().__init__("opener")
+        group = ReentrantCallbackGroup()
+        self._latest = None
+        self.create_subscription(Image, "image", self._on_image, 1)
+        self._retract = self.create_client(Trigger, "retract", callback_group=group)
+        ActionServer(self, OpenDoor, "open", self._execute, callback_group=group)
 
-The drink node's `_wait_for_new_camera_frame` is the same shape for a camera
-frame.
+    def _on_image(self, msg):
+        self._latest = msg  # store it, nothing else
+
+    def _wait_for_frame(self, after_stamp, timeout_s):
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            frame = self._latest
+            if frame is not None and frame.header.stamp != after_stamp:
+                return frame
+            time.sleep(0.005)  # the executor keeps delivering meanwhile
+        return None
+
+    def _call(self, client, request, timeout_s):
+        future = client.call_async(request)
+        deadline = time.monotonic() + timeout_s
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return future.result() if future.done() else None
+
+    def _execute(self, goal):
+        frame = self._wait_for_frame(after_stamp=None, timeout_s=1.0)
+        if frame is None:
+            goal.abort()
+            return OpenDoor.Result()
+        if self._call(self._retract, Trigger.Request(), timeout_s=5.0) is None:
+            goal.abort()
+            return OpenDoor.Result()
+        goal.succeed()
+        return OpenDoor.Result()
+
+
+def main():
+    rclpy.init()
+    rclpy.spin(Opener(), executor=MultiThreadedExecutor())
+```
 
 ## What does not belong here
 
