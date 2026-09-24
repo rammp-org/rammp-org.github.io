@@ -1,0 +1,120 @@
+---
+title: Storing state across runs
+---
+
+import { Callout } from 'nextra/components'
+
+# Storing state across runs
+
+A container starts from its image every time. Whatever your node wrote to its
+own filesystem is gone the next time sheppy launches it. Most of the time that is what you want: the manifest
+pins an image, and the same image runs the same way on every chair.
+
+Sometimes a module has a value that is expensive to get and worth keeping,
+such as a calibration the operator performed or a device pairing the hardware
+accepted. This page is the convention
+for keeping a value like that across runs without giving up the clean start.
+
+## The convention
+
+Keep the value in a file on the chair's disk, in a directory the manifest
+mounts into the container. The file holds the module's state. The container is
+still disposable; the state lives outside it.
+
+**On the host.** One directory per module, under the operator's config
+directory:
+
+```
+/home/abra/.config/<module>/
+```
+
+Docker creates it on the first launch if it is missing.
+
+**In the manifest.** Mount that directory at `/config` and tell the node where
+its file is with a launch argument:
+
+```yaml
+container:
+  image: ghcr.io/rammp-org/rammp-teleop:0.1.0
+  volumes:
+    - /home/abra/.config/rammp_teleop:/config
+  command: /module_ws/src/rammp-teleop/scripts/launch_entry.py rammp_teleop quest.launch.py r_align_file:=/config/quest_r_align.json
+```
+
+**In the node.** The file path is a parameter with an empty default. When it
+is set, the node reads the file at startup and writes it whenever the value
+changes. When it is empty, the node runs from its YAML defaults and does not
+save anything.
+
+**In the file.** Plain JSON, one value or a small dictionary, named for what it
+holds. A person should be able to open it and know what it is.
+
+```json
+{"r_align_euler_zyx_deg": [131.18, -2.96, 91.02]}
+```
+
+## The state can be cleared at any time
+
+Treat the file as a cache, not as a record. Any of these clear it:
+
+- The chair is reflashed, or the module runs on a different chair.
+- Someone deletes the directory to reset a module, which is the supported way
+  to do that.
+- The manifest is edited and the mount is dropped, or the mount is right but
+  the launch argument is not passed.
+- The file exists but an older version of the node wrote it in a shape the
+  current version does not read.
+
+So the node has to work with no file, and work with a file it cannot read.
+
+- **A missing file is the normal first run.** Fall back to the YAML defaults,
+  log that you did, and carry on. Never fail to start because the file is
+  missing.
+- **A file you cannot parse is the same as a missing file.** Log it, ignore
+  it, and overwrite it the next time you have a value. Do not crash on it.
+- **The value must be recoverable in session.** Whatever wrote the file the
+  first time has to be something the operator can do again on the chair,
+  without a workstation. A calibration gesture on a controller, a button, a
+  service call.
+- **Log what you loaded.** Print the value and the path on startup, so the
+  sheppy log answers the first question anyone asks when behavior looks stale.
+
+<Callout type="warning">
+  The state is per chair and per directory, not per module version. When you
+  change the shape of the file, read the old shape too or treat it as
+  unreadable. Do not assume the file on the chair was written by the code that
+  is reading it.
+</Callout>
+
+## A module that does this
+
+Quest teleop needs `R_align`, the yaw between the headset's tracking frame and
+the robot base. It changes on every headset reboot and is found by
+[a gesture on the controller](/rammp-teleop/quest-setup#calibrate-after-every-headset-reboot).
+
+- The `quest3` alternative in the deployment manifest mounts
+  `/home/abra/.config/rammp_teleop` at `/config` and passes
+  `r_align_file:=/config/quest_r_align.json`.
+- On startup the node loads the file if it exists and logs the triple it
+  loaded. If it does not exist, the YAML triple is used and the node says so.
+- When the operator calibrates, the new rotation applies at once and is written
+  to the file. When the parameter is empty, the log says it was not saved.
+
+A restart, an image upgrade, or a redeploy from the manifest keeps the
+calibration. A headset reboot invalidates it, and the operator recalibrates
+with the same gesture that wrote it in the first place.
+
+## What does not belong here
+
+- **Anything the YAML can hold.** A tuning constant that does not change on the
+  chair goes in the package config, where it is versioned and reviewed.
+- **Logs and recordings.** Those are output, not state.
+- **Secrets.** The adb key lives in `~/.android` because adb puts it there,
+  not because this pattern does.
+- **Anything large.** The file should be small enough to read in a log line.
+
+## Related
+
+- **[Deploy it](/publishing/deploy)** — the node entry the mount goes in.
+- **[Manifest reference](/sheppy/manifest-reference#docker-plugin)** — the
+  container fields sheppy accepts, `volumes` among them.
