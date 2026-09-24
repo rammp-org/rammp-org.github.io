@@ -7,21 +7,23 @@ import { Callout } from 'nextra/components'
 # Waiting without spinning
 
 A ROS 2 node is driven by one executor. Every subscription, timer, service and
-action callback runs because that executor delivered it. The moment code inside
-a callback tries to drive the node itself, delivery stops, and it stops
-silently.
+action callback runs because that executor delivered it. When code inside a
+callback tries to drive the node itself, delivery stops, and nothing reports
+it.
 
-That was the mouth-open failure on the chair in August 2026. A retry loop in
-the camera interface called `rclpy.spin_once(node)` from inside a callback
-while it waited for a transform. `spin_once` on a node that another executor
-owns steals it: the original executor's wait set no longer includes the node,
+The mouth-open failure on the chair was this. A retry loop in the camera
+interface called `rclpy.spin_once(node)` from inside a callback while it
+waited for a transform. `spin_once` on a node that another executor owns
+takes the node over: the original executor's wait set no longer includes it,
 and from then on nothing is delivered. Measured on the chair, the node went
 from 49 messages a second to zero, with no error anywhere.
 
+This page is the convention for waiting inside a callback.
+
 ## The convention
 
-**One executor spins the node, and no callback ever spins.** Waiting is done
-against cached state, with a sleep and a deadline.
+One executor spins the node, and no callback ever spins. A callback that has
+to wait waits on cached state, with a sleep and a deadline.
 
 - **Wait on a cache, not on the executor.** A subscription callback stores the
   latest message. Code that needs a newer one loops on the cache with a short
@@ -46,12 +48,11 @@ against cached state, with a sleep and a deadline.
   thirty seconds lives in a `ReentrantCallbackGroup` on a
   `MultiThreadedExecutor`, so the subscriptions it is waiting on are still
   serviced by other threads. A `SingleThreadedExecutor` with a blocking action
-  callback is the same bug with a different spelling.
+  callback has the same problem.
 
 - **Call services asynchronously and wait on the future the same way.**
-  `call_async`, then `while not future.done() and time.time() < deadline:
-  time.sleep(0.05)`. Never `spin_until_future_complete` from a callback; it is
-  `spin_once` in a loop.
+  `call_async`, then poll `future.done()` with a sleep and a deadline. Never
+  `spin_until_future_complete` from a callback; it spins.
 
 - **Every wait has a deadline, and the deadline returns `None`**, not an
   exception, unless the caller cannot continue. The caller decides whether a
@@ -69,23 +70,27 @@ against cached state, with a sleep and a deadline.
   is also fine, as long as nothing in your callbacks spins.
 </Callout>
 
-## What does not belong here
-
-- **A helper that "just spins once to refresh".** It is the bug.
-- **Threads that share the node with the executor and call into rclpy** for
-  anything but publishing. Publishing from a thread is safe; creating and
-  destroying subscriptions is safe; spinning is not.
-- **Busy-waiting.** A loop without a sleep pins a core and starves the executor
-  threads it is waiting on.
-
 ## A module that does this
 
 The door push controller in Demo-Software (`demo_modules/cmu_door_opener`):
-its `/arm/door/open` action runs in a reentrant group, sends the retract goal
-with `send_goal_async`, and waits for acceptance and for the result with a
-sleep loop and a deadline, checking the cancel flag on each pass. The comment
-in the code says why: "without `rclpy.spin_until_future_complete`". The drink
-node's `_wait_for_new_camera_frame` is the same shape for a camera frame.
+
+- Its `/arm/door/open` action runs in a `ReentrantCallbackGroup`.
+- It sends the retract goal with `send_goal_async` and waits for acceptance
+  and for the result with a sleep loop and a deadline, checking the cancel
+  flag on each pass.
+
+The drink node's `_wait_for_new_camera_frame` is the same shape for a camera
+frame.
+
+## What does not belong here
+
+- **A helper that spins once to refresh.** That is the failure described
+  above.
+- **Threads that share the node with the executor and call into rclpy** for
+  anything but publishing. Publishing from a thread is safe, and so is
+  creating and destroying subscriptions. Spinning is not.
+- **Busy-waiting.** A loop without a sleep pins a core and starves the
+  executor threads it is waiting on.
 
 ## Related
 

@@ -6,24 +6,25 @@ import { Callout } from 'nextra/components'
 
 # Reporting one frame at a time
 
-A perception node answers one question per frame: what did you see in this
-image? The tempting shortcut is to answer with the last thing you saw, so
-consumers always have a value. On the chair that shortcut put a cup outline on
-the GUI after the cup had left the table, and sent the arm to a mouth position
-that the head had moved away from.
+A perception node answers one question per frame: what is in this image? The
+shortcut is to answer with the last thing it saw, so consumers always have a
+value. On the chair that shortcut put a cup outline on the GUI after the cup
+had left the table, and sent the arm to a mouth position the head had moved
+away from.
 
-Two versions of the same mistake:
+Both were the same mistake. `perceive_cup_info` kept the last detected pose
+and mask and published them on every call, so the GUI showed a cup that was
+no longer there. The head-pose smoother rejected any jump larger than its
+threshold as an outlier; when the user really moved, every later frame was
+also a jump, so the smoother rejected them all and reported the old position
+until restart.
 
-- `perceive_cup_info` kept the last detected pose and mask and published them
-  on every call, so the GUI showed a cup that was no longer there.
-- The head-pose smoother rejected any jump larger than its threshold as an
-  outlier. When the user really moved, every subsequent frame was also a jump,
-  so the smoother rejected them all and reported the old position forever.
+This page is the convention for what a perception message carries.
 
 ## The convention
 
-**Every perception message describes one frame, and says whether it found
-anything.**
+Every perception message describes one frame and says whether it found
+anything.
 
 - **Carry the source frame's stamp.** The `header.stamp` of the output is the
   stamp of the image it came from, not the time of publishing. A consumer can
@@ -40,8 +41,8 @@ anything.**
   faster than the camera does not re-detect the same image and report it as
   new confirmation.
 - **Filters reject for a bounded number of frames, then follow.** A smoother
-  may drop one or two outliers. On the third consecutive rejection the input is
-  not an outlier, it is the new truth: clear the history and follow it. The
+  may drop one or two outliers. On the third consecutive rejection the input
+  is not an outlier; the head has moved. Clear the history and follow it. The
   head-pose smoother now does this with `max_rejects=2`.
 
 ```python
@@ -54,7 +55,7 @@ self._reject_streak = 0
 ```
 
 <Callout type="warning">
-  "Success false" is a result, not an error. Log it at debug level or not at
+  `success` false is a result, not an error. Log it at debug level or not at
   all. A perception node that warns on every frame without a cup fills the log
   the moment the cup is put away.
 </Callout>
@@ -67,24 +68,29 @@ last box. A planner that needs a detection waits for a message with `success`
 true and a stamp newer than when it started asking, so a leftover from the
 previous task cannot satisfy it.
 
-## What does not belong here
-
-- **Latching the output topic** (`durability=TRANSIENT_LOCAL`) for detections.
-  Latching is for things that are true until changed, like a calibration. A
-  detection stops being true one frame later.
-- **Hiding a miss by lowering the threshold** until something is always found.
-  A false detection is worse than an honest miss, because the arm acts on it.
-- **Streaming everything you computed.** The cup mask went to the GUI on every
-  frame and slowed it down; the operator needed the box. The message carries
-  what the consumer uses.
-
 ## A module that does this
 
-The door button detector in Demo-Software (`demo_modules/cmu_door_opener`)
-has done this from the start: a `ButtonInfo` every cycle with three explicit
-states, no button, detected but not pressable, and pressable with a filtered
-pose. The drink node's `CupInfo` now follows it, with the pose and box of the
+The door button detector in Demo-Software (`demo_modules/cmu_door_opener`):
+
+- A `ButtonInfo` on every 5 Hz cycle, whether or not the pipeline found
+  anything.
+- Three explicit states: no button, detected but not pressable, and pressable
+  with a filtered pose.
+- All fields `-1` when any step fails.
+
+The drink node's `CupInfo` now follows it, with the pose and box of the
 current frame only and `success` false when the cup is out of view.
+
+## What does not belong here
+
+- **A latched output topic** (`durability=TRANSIENT_LOCAL`) for detections.
+  Latching is for things that stay true until changed, like a calibration. A
+  detection stops being true one frame later.
+- **A lowered threshold to hide a miss.** A false detection is worse than a
+  miss, because the arm acts on it.
+- **Everything you computed.** The cup mask went to the GUI on every frame and
+  slowed it down; the operator needed the box. The message carries what the
+  consumer uses.
 
 ## Related
 

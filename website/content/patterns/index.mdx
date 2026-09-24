@@ -14,25 +14,23 @@ uses it.
 - **[Storing state across runs](/patterns/storing-state-across-runs)** — where a
   module keeps a value that has to survive a container restart, and how it
   copes when that value is gone.
-- **[Subscribing only while working](/patterns/subscribing-only-while-working)** — a
-  node that has not been asked to work subscribes to nothing fast; sensors and
-  arm state come and go with the task that needs them.
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — what a node may subscribe to while nothing has asked it to work, and how
+  it brings sensors up and down with the task.
 - **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
-  — block on the source instead of polling it, publish on arrival or on change
-  with a slow keepalive, and pick the wire rate for the consumers.
+  — how often a node reads, publishes and logs: at the rate of the source, on
+  change with a keepalive, and no faster than the consumers need.
 - **[Separating bulk data from control traffic](/patterns/separating-bulk-data-from-control-traffic)**
-  — a button press never waits behind video; separate channels, send on
-  change, and bound the worst-case frame.
-
+  — how a button press stays ahead of video: separate channels, bulk data sent
+  on change and sized for the consumer, and a bounded worst-case frame.
 - **[Starting without the hardware](/patterns/starting-without-the-hardware)**
-  — launch order never matters; a missing peer is logged, retried on a timer,
-  and served around, and losing it later is handled the same way.
-- **[Waiting without spinning](/patterns/waiting-without-spinning)** — one
-  executor drives the node; callbacks wait on cached state with a sleep and a
-  deadline, never by spinning or blocking on a terminal.
+  — how a node waits for a peer that is not there yet, and what it does when
+  the peer goes away later.
+- **[Waiting without spinning](/patterns/waiting-without-spinning)** — how a
+  callback waits for data without taking the node away from its executor.
 - **[Reporting one frame at a time](/patterns/reporting-one-frame-at-a-time)**
-  — perception messages describe one frame, carry its stamp, publish absence
-  explicitly, and filters follow a sustained change.
+  — what a perception message carries: one frame, its stamp, and an explicit
+  "nothing found".
 
 ## Related
 

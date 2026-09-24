@@ -12,34 +12,37 @@ sleep on its own and wakes when someone touches it. A node that needs one of
 those cannot assume it is there when the node starts, or that it stays there.
 
 The drink node used to raise after a short wait for the wrist camera, so it
-died whenever it was launched before the camera. The LUCI gRPC node still exits
-when the chair does not answer within its connection timeout, and since sheppy
-does not respawn a node that exits, the chair stays undriveable until someone
-notices and restarts it by hand.
+died whenever it was launched before the camera. The LUCI gRPC node still
+exits when the chair does not answer within its connection timeout, and since
+sheppy does not respawn a node that exits, the chair stays undriveable until
+someone restarts the node by hand.
+
+This page is the convention for a node whose hardware is not there yet.
 
 ## The convention
 
-**Launch order never matters.** A node starts, tells you what it is waiting for,
-and keeps waiting.
+Launch order does not matter. A node starts, says what it is waiting for, and
+keeps waiting.
 
-- **Wait without a deadline, and say so on a schedule.** Log once that the peer
-  is missing, then a reminder every 10 s or so with the topic or address you
-  are waiting on. The drink node waits for `/camera/wrist/color/image_raw` and
-  logs "Is the wrist RealSense running?" every 10 s until it arrives.
+- **Wait without a deadline, and say so on a schedule.** Log once that the
+  peer is missing, then a reminder every 10 s or so with the topic or address
+  you are waiting on. The drink node waits for
+  `/camera/wrist/color/image_raw` and logs "Is the wrist RealSense running?"
+  every 10 s until it arrives.
 - **Retry on a timer that cancels itself.** The arm driver tries to connect to
   the Kortex arm at 2 Hz from a timer created in `__init__`, and cancels the
-  timer the first time it succeeds. The node is up, its services exist, and
+  timer the first time it succeeds. The node is up and its services exist, so
   the rest of the system can discover it in the meantime.
-- **Serve what you can while you wait.** Publish your status topic at 1 Hz from
-  the start so the system can show "arm: not connected" rather than "arm:
-  missing". Answer commands with a clear rejection ("arm not connected") rather
-  than a timeout.
+- **Serve what you can while you wait.** Publish your status topic at 1 Hz
+  from the start so the system can show "arm: not connected" rather than
+  "arm: missing". Answer commands with a clear rejection ("arm not connected")
+  rather than a timeout.
 - **Treat losing the peer like never having had it.** The arm driver's comms
   watchdog moves to `ERROR` after 0.5 s without feedback, and a `clear_error`
   service brings it back once the arm answers again. The operator does not
   restart the node.
-- **Never exit because a peer is absent.** An exit code is a message to a
-  human, and on the chair no human is watching the log.
+- **Never exit because a peer is absent.** Nobody on the chair is watching
+  for an exit code, and sheppy will not restart the node.
 
 <Callout type="warning">
   Do not confuse this with tolerating a *broken* peer. A camera that publishes
@@ -53,8 +56,18 @@ and keeps waiting.
 `system_control` decides the chair is ready only when every expected node is
 present and the base's diagnostics report LUCI and the Teensy connected. While
 something is missing it logs the list every 5 s, and the GUI shows the system
-as initialising. That is what your node's waiting state feeds into: the
-operator sees one summary, not a stack trace in one container's log.
+as initialising. Your node's waiting state feeds that summary: the operator
+sees one line, not a stack trace in one container's log.
+
+## A module that does this
+
+The arm driver in Demo-Software (`hardware/arm_driver`):
+
+- A 2 Hz connect timer, created in `__init__`, that cancels itself once the
+  arm answers.
+- A 1 Hz status topic from the first second.
+- Commands rejected with "not connected" until the arm answers.
+- A watchdog that turns a lost connection into a recoverable `ERROR` state.
 
 ## What does not belong here
 
@@ -63,14 +76,7 @@ operator sees one summary, not a stack trace in one container's log.
   nodes that were ready.
 - **Retrying inside a callback.** See
   [Waiting without spinning](/patterns/waiting-without-spinning).
-- **Depending on sheppy to respawn you.** It does not.
-
-## A module that does this
-
-The arm driver in Demo-Software (`hardware/arm_driver`): a 2 Hz connect timer
-that cancels itself, a 1 Hz status topic from the first second, commands
-rejected with "not connected" until the arm answers, and a watchdog that turns
-a lost connection into a recoverable `ERROR` state.
+- **An exit that relies on sheppy to respawn the node.** It does not.
 
 ## Related
 
