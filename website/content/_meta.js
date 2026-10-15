@@ -12,6 +12,7 @@ export default {
   development: 'Development flow',
   'git-workflow': 'Recommended git workflow',
   publishing: 'Publishing a module',
+  'configuring-a-deployment': 'Configuring a deployment',
   patterns: 'Common patterns',
   interfaces: 'Interfaces',
   sheppy: 'sheppy',
