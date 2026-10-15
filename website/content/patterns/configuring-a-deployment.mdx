@@ -4,65 +4,77 @@ title: Configuring a deployment
 
 # Configuring a deployment
 
-A deployment has settings at several levels: which node runs, what its parameters
-are, what changes from one robot to the next, and setup that has to happen before
-any node starts, like which NIC the arm is on. When each of these can live
-anywhere, the same value ends up in three places, and the one that wins is the one
-nobody looked at.
+A deployment is configured in several places: the sheppy manifest, its
+profiles, the module images, a module's saved state, and the robot itself.
+This page says which place each kind of setting goes in, so a value is set in
+one place only.
 
-This page is where each kind of setting goes.
+## Where each setting goes
 
-## The convention
+| Setting                                     | Where it goes                                                                                                    |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Which alternative of a node runs            | the manifest's `alternatives`, and a profile's `selections`                                                      |
+| A node parameter and its default            | the alternative's `params:` in the manifest                                                                      |
+| A parameter value for one robot             | that robot's profile, `profiles/<robot>.yaml`, under `overrides`                                                 |
+| A parameter value for one run               | `p` in the TUI                                                                                                   |
+| Large configuration that rarely changes     | the module's image                                                                                               |
+| A value the module saves and reloads        | `~/.config/<module>`, mounted at `/config` (see [Storing state across runs](/patterns/storing-state-across-runs)) |
+| Host and device setup that sheppy cannot do | `config/robots/<robot>/` next to the manifest, applied by a script                                               |
 
-| Setting                                   | Lives in                                                                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Which alternative of a node runs          | the manifest's `alternatives`, a profile's `selections`                                                      |
-| A node parameter and its default          | the manifest's `params:`                                                                                     |
-| A value that differs per robot or per run | `profiles/<robot>.yaml` `overrides`, or `p` in the TUI                                                       |
-| Large, static module configuration        | the module's image                                                                                           |
-| State that survives a container restart   | `~/.config/<module>`, mounted at `/config` ([Storing state across runs](/patterns/storing-state-across-runs)) |
-| Setup of the robot outside any node       | `config/robots/<robot>/` in the deployment repo, applied by a script                                         |
+### Parameters
 
-**Parameters go through sheppy.** A value goes in `params:` if anyone would change it
-for a robot or from the TUI. sheppy only overrides what `params:` lists, so a value
-buried in `command:` cannot be changed per robot.
+Put a parameter in `params:` if anyone might change it for a robot or from the
+TUI. A profile override or a TUI edit only applies to a parameter listed
+there. A value hard-coded in `command:` can only be changed by editing the
+manifest.
 
-**The robot name joins the two per-robot places.** `config/robots/flatbot/` and
-`profiles/flatbot.yaml` describe the same robot.
+### Robot setup
 
-**Robot setup is applied, not launched.** It is the part sheppy cannot do: NetworkManager
-profiles, a camera's stored network config. Each file has one script that applies it,
-validates the whole file before changing anything, is safe to re-run, and has a
-`--dry-run`.
+Some setup has to be done before any node starts, and sheppy has no way to do
+it: the host's network interfaces, or the network settings a camera stores on
+the device. That goes in `config/robots/<robot>/`, one file per kind of
+setup. Each file has a script that applies it. The script:
 
-## A deployment that does this
+- checks the whole file before it changes anything;
+- changes only what differs, so running it twice is safe;
+- has `--dry-run`, which prints the changes without making them;
+- has `--validate`, which checks the file and exits. CI runs it on every
+  robot.
 
-rammp-deployments' `december_2026/config/robots/flatbot/` holds `network.yaml`, the
-Jetson's two NICs (the arm on a static link, the sensor network on DHCP), and
-`oak_d.yaml`, each OAK-D PoE camera's addressing keyed by its manifest node name and
-found by device ID. After a reflash:
+Use the same robot name in `config/robots/<robot>/` and in
+`profiles/<robot>.yaml`.
+
+## Example: flatbot
+
+flatbot is a mobile test platform. Its setup lives in rammp-deployments, in
+`december_2026/config/robots/flatbot/`:
+
+- `network.yaml` sets the Jetson's two network interfaces: a static address
+  on the link to the arm, and DHCP on the sensor network.
+- `oak_d.yaml` sets the network config of each OAK-D PoE camera. Each entry is
+  named after the camera's node in the manifest, and the script finds the
+  camera by its device ID.
+
+After the Jetson is reflashed, two commands restore the setup:
 
 ```bash
 uv run scripts/network_config.py december_2026/config/robots/flatbot
 uv run scripts/oak_d_config.py   december_2026/config/robots/flatbot
 ```
 
-CI runs both with `--validate` on every robot, so a broken robot config fails the PR
-the way a broken manifest does.
+## What does not go in `config/robots/`
 
-## What does not belong here
-
-- **Node parameters in `config/robots/`.** They are sheppy's: `params:` and profiles.
-- **A separate directory of node config files.** It competes with profiles and cannot
-  be overridden from the TUI. Large static config ships in the module's image.
-- **State.** A calibration the operator performs is
-  [state](/patterns/storing-state-across-runs), not config.
+- **Node parameters.** They go in the manifest's `params:` and in profiles.
+- **Config files for nodes.** A separate config directory can't be overridden
+  from a profile or the TUI. Ship large config in the module's image instead.
+- **Saved state**, such as a calibration the operator ran. See
+  [Storing state across runs](/patterns/storing-state-across-runs).
 - **Secrets.**
 
 ## Related
 
-- **[Profiles](/sheppy/profiles)** — per-robot selections and overrides.
-- **[Storing state across runs](/patterns/storing-state-across-runs)** — the per-chair
-  state convention.
-- **[OAK-D Pro PoE](/oak-d-pro-poe)** — the camera, and why its network config is
-  stored on the device.
+- **[Profiles](/sheppy/profiles)** — selections and parameter overrides.
+- **[Storing state across runs](/patterns/storing-state-across-runs)** —
+  keeping a module's state across container restarts.
+- **[OAK-D Pro PoE](/oak-d-pro-poe)** — the camera, and why its network config
+  is stored on the device.
