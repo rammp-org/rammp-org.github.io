@@ -51,6 +51,26 @@ against it is [Developer setup](/setup).
   </figcaption>
 </figure>
 
+### The arm mount
+
+The arm bolts to the chair through an adapter plate that leans it **30°
+forward**, toward the front of the chair. Every robot that copies the Gen 1.5
+mount uses the same plate.
+
+| | |
+| --- | --- |
+| Part | `new_adapter_plate_v3` |
+| Lean | 30° forward: +30° about the chair's Y axis |
+| CAD | [new_adapter_plate_v3.STEP](https://github.com/rammp-org/rammp-hardware/raw/main/arm-mount/new_adapter_plate_v3.STEP), in [rammp-hardware](https://github.com/rammp-org/rammp-hardware) |
+
+> **Fill in** material, fasteners, and the plate's bolt pattern to the chair
+> frame.
+
+The software has to know about the lean. Gravity compensation in the arm
+driver and "keep level" constraints in the planner both assume the arm's base
+is level, and on a 30° plate they are 30° wrong. Each robot declares its
+mount rotation in `mount.yaml`; see [Frames and transforms](#frames-and-transforms).
+
 ## Kinova Wrist Puck Attachment
 
 Kinova developed a custom wrist attachment that exposes I/O routed through the
@@ -86,9 +106,104 @@ that make it hold, and how to apply them, are in
 
 ## Sensor Suite
 
-The sensor suite is not final. This is the current planned setup:
+The two RGBD cameras are settled and match flatbot's. The fisheye cameras are
+still being worked out.
 
 | Sensor | Count | Where | Purpose |
 | --- | --- | --- | --- |
-| Fisheye camera | 4 | Corners of the base | 360 degree coverage around the chair |
+| Fisheye camera (WIP) | 4 | Corners of the base | 360 degree coverage around the chair |
 | RGBD camera | 1 | Joystick module | Scene camera for manipulation tasks |
+| RGBD camera | 1 | Arm wrist | Close-range view for grasping |
+
+### Cameras
+
+Both RGBD cameras are Luxonis OAK PoE units. They take power and data over one
+Ethernet cable each, so nothing on the chair needs a USB run, and they compute
+depth on the camera rather than on the Jetson.
+
+| Node | Camera | Why this one |
+| --- | --- | --- |
+| `scene_camera` | [OAK-D Pro W PoE](https://docs.luxonis.com/hardware/products/OAK-D%20Pro%20W%20PoE), OV9782 colour variant | 127° horizontal field of view: one camera sees the table and the arm's whole workspace |
+| `wrist_camera` | [OAK-D Pro PoE](/oak-d-pro-poe) | Active stereo with near-field tuning, down to roughly 15–30 cm |
+
+Both run the same `rammp-suite-software/oak` image; only their parameters
+differ. A node finds its camera by device ID (MxID), so a camera's address can
+change under DHCP without touching the manifest. Setting one up from a laptop
+is on the [OAK-D Pro PoE](/oak-d-pro-poe) page.
+
+The other cameras in the labs are alternatives in the same manifest nodes and
+publish the same topics, so consumers cannot tell which one is selected:
+
+| Camera | Node | Interface | Where it is used |
+| --- | --- | --- | --- |
+| Orbbec Gemini 336L | `scene_camera` | USB | dojo |
+| Intel RealSense D405 | `wrist_camera` | USB | dojo. Sees from about 7 cm. |
+| Intel RealSense D435i | `wrist_camera` | USB | Spare. Minimum depth is tens of centimetres. |
+
+> **Fill in** the camera brackets' CAD (wrist and joystick module) once they
+> are in [rammp-hardware](https://github.com/rammp-org/rammp-hardware).
+
+## Frames and transforms
+
+Every frame the chair publishes hangs off one tree:
+
+```text
+base_link (chair)
+└── arm_mount                  level with the chair, X forward, Z up
+    ├── scene_camera           static TF, from transforms/
+    └── arm_base_link          mount rotation, from mount.yaml
+        └── arm_shoulder_link → … → arm_end_effector_link
+                                    ├── arm_tool_frame
+                                    └── wrist_camera   static TF, from transforms/
+```
+
+- **`arm_mount`** is the frame all Cartesian goals and arm state are in. It
+  shares `arm_base_link`'s origin but is level with the chair, so "+Z" means
+  up, not up the slope of the plate. It is level with the chair, not with
+  gravity: on a ramp it tilts with the chair.
+- **Arm frames** carry an `arm_` prefix; the chair owns `base_link`.
+- **Camera frames** are the roots of each driver's own tree. An OAK's tree is
+  rooted at `<camera>` itself (the colour sensor, body axes); a Gemini's or
+  RealSense's is rooted at `<camera>_link`.
+- **`base_link` → `arm_mount`** is not published yet. It waits on a chair
+  URDF that owns the chair's fixed geometry.
+
+### Where each transform comes from
+
+Transform data lives with the deployment, one directory per robot, in
+`rammp-deployments/<deployment>/config/robots/<robot>/`:
+
+| File | What it sets | Read by |
+| --- | --- | --- |
+| `mount.yaml` | The rotation from `arm_mount` to `arm_base_link`, as `rpy_deg` | `arm_state_publisher`, which renders the arm's model once and publishes `/arm/robot_description`; the driver and cuRobo both read the model from it |
+| `transforms/*.yaml` | Camera mounts and any other fixed frame, in [rammp-calibration](https://github.com/rammp-org/rammp-calibration)'s `mounts.yaml` format | The `static_tf` node from [rammp-tools](https://github.com/rammp-org/rammp-tools), which publishes them on `/tf_static` |
+
+`scripts/set_robot.py` points `config/robots/current` at the host's robot, and
+the nodes read that directory. A solved calibration replaces a
+`transforms/` file as-is.
+
+The Gen 1.5 mount:
+
+```yaml
+# config/robots/gen_1_5/mount.yaml
+robot: gen_1_5
+rpy_deg: [0.0, 30.0, 0.0] # new_adapter_plate_v3: 30° forward lean
+```
+
+> **Fill in** `gen_1_5/transforms/` once the cameras are on the chair. Until
+> then, flatbot's below is the closest reference.
+
+### The robots in the labs
+
+| Robot | Host | What it is | Arm mount | Scene camera | Wrist camera |
+| --- | --- | --- | --- | --- | --- |
+| `gen_1_5` | — | This chair, not built yet | 30° plate | OAK-D Pro W PoE | OAK-D Pro PoE |
+| `flatbot` | `snorlax` | Mobile test platform with the Gen 1.5 arm mount and electronics | 30° plate | OAK-D Pro W PoE | OAK-D Pro PoE |
+| `dojo` | `abra` | Bench arm cell | Level | Orbbec Gemini 336L | RealSense D405 |
+
+flatbot's camera mounts, hand-measured and not yet calibrated:
+
+| Child | Parent | xyz (m) | Rotation |
+| --- | --- | --- | --- |
+| `scene_camera` | `arm_mount` | `[0.20, -0.50, 0.40]` | Facing +X, mounted upside down (180° roll) |
+| `wrist_camera` | `arm_end_effector_link` | `[-0.10, 0.0, 0.10]` | Looking along the tool (+Z), mounted upside down, its +Z toward the gripper axis (90° about Y) |
