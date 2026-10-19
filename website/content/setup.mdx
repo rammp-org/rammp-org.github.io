@@ -145,6 +145,21 @@ kernel exposes them.
   `ExecStart` at your clone, and `sudo systemctl enable --now rt-setup.service`.
 </Callout>
 
+### Raise the DDS socket buffers
+
+Camera frames, depth and perception results are megabytes each, and Cyclone
+DDS receives them through UDP sockets. With Linux's default 208 KB receive
+buffer, a subscriber loses pieces of large messages and drops them whole. On
+snorlax a detector publishing at 10 Hz arrived at 8.5–9.4 Hz
+([Perception compute budget](/perception-compute#snorlax)). Set the buffers
+once:
+
+```bash
+printf 'net.core.rmem_max=33554432\nnet.core.rmem_default=16777216\n' \
+  | sudo tee /etc/sysctl.d/60-ros-dds-buffers.conf
+sudo sysctl --system
+```
+
 ### Check that it holds
 
 A PREEMPT_RT kernel is necessary but not sufficient; every row below has to
@@ -162,6 +177,7 @@ driver's
 | Deep CPU idle | disabled on the isolated core | `cat /sys/devices/system/cpu/cpu11/cpuidle/state1/disable` → `1` |
 | RT throttling | off | `cat /proc/sys/kernel/sched_rt_runtime_us` → `-1` |
 | Timer migration | off | `cat /proc/sys/kernel/timer_migration` → `0` |
+| DDS receive buffers | 32 MB max, 16 MB default | `cat /proc/sys/net/core/rmem_max` → `33554432` |
 | Transparent huge pages | `[never]`, or absent | `cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \|\| echo absent` |
 
 Then measure:

@@ -1,0 +1,255 @@
+---
+title: Perception compute budget
+---
+
+import { Callout } from 'nextra/components'
+
+# Perception compute budget
+
+Perception shares the chair's Jetson AGX Orin with the arm driver, the
+planner and every module. This page fixes the rates the perception stack
+runs at, gives what it costs at those rates, and records how the options
+compare. The measurements are from October 2026, on the `sha-8091bbee`
+perception images. The tooling to repeat them is in
+[rammp-deployments `perf/`](https://github.com/rammp-org/rammp-deployments/tree/dev/perf).
+
+## The stack and its rates
+
+| Node | Runs | Rate |
+| --- | --- | --- |
+| `scene_camera` | Orbbec Gemini 336L, 1280 × 720 color and registered depth | 30 fps |
+| `scene_segmenter` | YOLOE-26m-seg on the GPU (TensorRT FP16), BoT-SORT tracking | 10 Hz: `frame_stride: 3` |
+| `sam3` | SAM3: expert detection on request, tracking sessions | tracking at most 5 Hz: `max_tracking_rate_hz: 5.0` |
+| `object_lifter` | BoxerNet 3D boxes for the segmenter's objects | at most 5 Hz: `max_rate_hz: 5.0` |
+
+Every perception container also runs with `OPENBLAS_NUM_THREADS=1`. Without
+it, numpy's thread pool keeps up to five CPU cores busy per detector (see
+[CPU](#cpu)).
+
+At these rates, with SAM3 tracking one object, the whole stack costs this on
+abra:
+
+| | |
+| --- | --- |
+| Always-on detections | 10 Hz, 116 ms from camera capture to result (median) |
+| SAM3 tracking | 4.7 Hz, 183 ms |
+| BoxerNet 3D boxes | 5.0 Hz, 281 ms |
+| GPU busy | 61% |
+| CPU | 27% of 12 cores |
+| Memory | about 15 GB (measured on snorlax, see [Memory](#memory)) |
+| Module power | 39 W |
+
+GPU busy is the fraction of time the GPU was running anything (`GR3D_FREQ` in
+`tegrastats`). Power is the sum of the three monitored rails. Latency is
+receive time minus the camera frame's stamp, so it includes the camera driver
+(about 50 ms on the Gemini).
+
+<Callout type="info">
+The stack keeps its rates when something else loads the GPU. Next to a
+process keeping the GPU busy 70% of the time, the detector ran at 9.9 Hz, SAM3
+tracking at 4.5 Hz and BoxerNet at 5.0 Hz. See [Sharing the GPU](#sharing-the-gpu).
+</Callout>
+
+## Where the GPU goes
+
+Each node's share is the difference between runs with and without it, at the
+rates above.
+
+| Node | GPU busy |
+| --- | --- |
+| SAM3 tracking one object at 5 Hz | 24% (48% uncapped, at about 12 Hz) |
+| BoxerNet at 5 Hz | about 30% (about 40% lifting every detection, at 8.7 Hz) |
+| YOLOE-26m-seg at 10 Hz | about 10% |
+| Scene camera, planner (idle), foxglove | 0% |
+
+A SAM3 detect call (four prompts, 0.6–1.2 s depending on load) holds the GPU for its whole
+duration. A tracking session waits for it, so tracking pauses for about a
+second during each call.
+
+## Choosing the always-on detector
+
+The always-on detector has to report the Orchestrator's object classes (food
+container, drink cup, fridge, microwave, table), with masks, at 10 Hz. SAM3
+covers the hard cases on request. Each row below is the detector at 10 Hz,
+next to SAM3 tracking at 5 Hz, with the OpenBLAS fix.
+
+| Detector | Rate | Camera to result | Its GPU share | Classes | Masks |
+| --- | --- | --- | --- | --- | --- |
+| **YOLOE-26m-seg, GPU** | 10.0 Hz | 98 ms | ~10% | all five (open vocabulary) | yes |
+| YOLOE-26s-seg, GPU | 10.0 Hz | 91 ms | ~6% | all five | yes |
+| YOLOE-26s-seg, DLA0 | **9.3 Hz** | 175 ms | ~8% | all five | yes |
+| RF-DETR-Seg S, GPU | 10.0 Hz | 100 ms | ~18% | COCO only: food container only as "bowl" | yes |
+| NanoOWL B/32, GPU | 10.0 Hz | 66 ms | ~9% | open vocabulary | **no**, boxes |
+| OWLv2 B/16, GPU | **1.5 Hz** | 744 ms | the whole GPU | open vocabulary | **no**, boxes |
+
+- **YOLOE-26m on the GPU** is the always-on detector. It has the best YOLOE
+  masks, covers every class, and costs little GPU at 10 Hz.
+- **YOLOE-26s** is cheaper but has weaker masks. In the 2026-10-08 down-select
+  it missed close-up microwave views that 26m caught.
+- **The DLA** frees most of the GPU, but a frame takes 94 ms there, so it
+  cannot hold 10 Hz in the stack: 9.3 Hz alone, 7.7 Hz with BoxerNet, 7.2 Hz
+  next to a busy GPU (the detection head falls back to the GPU). It is worth
+  revisiting with an INT8 engine if the GPU becomes the limit.
+- **RF-DETR-Seg** gives the cleanest masks and holds 10 Hz in the full stack
+  for a little more GPU (about 18% against 10%), but knows only COCO classes.
+- **NanoOWL** and **OWLv2** return boxes only. OWLv2 also takes the whole GPU.
+  NanoOWL is faster but finds the classes less well (below).
+
+Mask and class quality are from the detector down-select of 2026-10-08 on abra,
+with SAM3 as pseudo ground truth.
+
+### NanoOWL against YOLOE-26m
+
+NanoOWL has a rammp-perception image (`nanoowl`, OWL-ViT B/32 or B/16 in one
+TensorRT FP16 engine, with NMS and per-class thresholds added). It was checked
+on the class list on 21 images (two scene-camera views, 15 handheld microwave
+frames, 4 kitchen photos), with SAM3 boxes as the reference:
+
+| Detector | mAP | Found / false positives (57 objects) | Finalized stack: camera to result | Stack GPU |
+| --- | --- | --- | --- | --- |
+| **YOLOE-26m** | **0.86** | **35 / 3** | 120 ms | 58% |
+| RF-DETR-Seg S | 0.68 | 37 / 8 | 112 ms | 64% |
+| NanoOWL B/32 | 0.51 | 21 / 21 | **82 ms** | 54% |
+| NanoOWL B/16 | 0.46 | 18 / 6 | 117 ms | 76% |
+
+NanoOWL B/32 saves about 40 ms of latency and 4 points of GPU in the full
+stack, where SAM3 and BoxerNet dominate. It misses more and labels more of the
+wrong things: a wardrobe as a fridge, an oven window as a cup. YOLOE-26m stays
+the always-on detector. The test set is small and has few cups and containers;
+a recording of the demo setup would settle it better.
+
+## Measurements
+
+### Setup
+
+- **abra**: AGX Orin 64 GB devkit, L4T r36.4.7, MAXN with clocks locked,
+  PREEMPT_RT. The Gemini 336L was the scene camera.
+- **snorlax**: the December demo machine. A Seeed AGX Orin 64 GB, L4T r36.4.4,
+  MAXN with clocks locked, stock kernel. Its cameras were not cabled yet, so it
+  replayed 60 frames recorded from abra's Gemini, at 30 fps with fresh stamps.
+  Latencies there leave out the camera driver.
+- Every node ran as the december_2026 manifest runs it. The rest of the stack
+  ran next to it: scene camera, cuRobo planner (idle), foxglove bridge, and the
+  arm and its TF as mocks, because abra's arm was off the network. There was no
+  wrist camera, so its driver's CPU is not counted.
+- Each run waited for every topic, warmed up for 15 s, then measured for 60 s.
+- SAM3 tracked one object ("microwave"). Five detect calls with four prompts
+  each were made during each measured minute.
+
+### Each detector at full rate
+
+Every camera frame offered (`frame_stride: 1`), with SAM3 loaded and idle.
+These runs were before the OpenBLAS fix, which is why CPU is so high.
+
+| Detector | Rate | Node ms per frame | Camera to result | GPU busy | Detector CPU |
+| --- | --- | --- | --- | --- | --- |
+| YOLOE-26m-seg, GPU | 18.2 Hz | 52 | 130 ms | 15% | 7.7 cores |
+| YOLOE-26s-seg, GPU | 19.1 Hz | 44 | 128 ms | 9% | 7.7 cores |
+| YOLOE-26s-seg, DLA0 | 9.8 Hz | 100 | 166 ms | 1% | 4.9 cores |
+| RF-DETR-Seg S, GPU | 23.1 Hz | 42 | 115 ms | 35% | 4.0 cores |
+| NanoOWL B/32, GPU | 30.0 Hz (camera rate) | 14 | 65 ms | 24% | 0.5 cores |
+| OWLv2 B/16, GPU | 2.5 Hz | 392 | 458 ms | 97% | 0.2 cores |
+
+With BoT-SORT's default camera-motion compensation (`gmc_method:
+sparseOptFlow`), YOLOE spends about 12 ms per frame of CPU on optical flow.
+`gmc_method: none` saves that if ids hold without it.
+
+### Sharing the GPU
+
+A synthetic load (`perf/gpu_load.py`, FP16 matrix multiplies in 20 ms bursts)
+stood in for the other GPU users on the chair: the planner and modules.
+
+| Configuration | Detector | SAM3 tracking | BoxerNet | GPU busy |
+| --- | --- | --- | --- | --- |
+| Finalized stack | 10.0 Hz, 116 ms | 4.7 Hz | 5.0 Hz | 61% |
+| Finalized stack, other user busy 70% | 9.9 Hz, 148 ms | 4.5 Hz | 5.0 Hz | 91% |
+| No BoxerNet, other user busy 40% | 10.0 Hz, 111 ms | 4.7 Hz | – | 64% |
+| No BoxerNet, other user busy 70% | 10.0 Hz, 126 ms | 4.7 Hz | – | 79% |
+| No BoxerNet, SAM3 uncapped, other user busy 70% | 10.0 Hz, 141 ms | 7.7 Hz | – | 86% |
+
+Every GPU detector held 10 Hz next to the load. SAM3 tracking slowed when it
+was uncapped, and held its rate when capped at 5 Hz.
+
+### SAM3
+
+| | Uncapped (`max_tracking_rate_hz: 15`) | Capped at 5 Hz |
+| --- | --- | --- |
+| Tracking rate, one object, alone | 11.8 Hz | 4.85 Hz |
+| Camera to result | 150 ms | 146 ms (272 ms before [rammp-perception#8](https://github.com/rammp-org/rammp-perception/pull/8)) |
+| GPU busy, SAM3 alone | 48% | 24% |
+| Detect, four prompts, next to the detector | 0.7–0.9 s | 0.6–0.8 s |
+
+Before rammp-perception#8, a capped tracking step took a frame first and then
+waited out the cap, so it always tracked a frame that was about 120 ms old.
+
+### CPU
+
+Before the fix, the scene segmenter used 5 cores at 10 Hz (YOLOE) or 2.6
+(RF-DETR) for about 40 ms of work per frame. The cost was numpy's OpenBLAS:
+it starts a worker per core, the workers busy-wait between calls, and the
+trackers' small matrix operations wake them every frame. Limiting torch's or
+OpenCV's threads, or making CUDA wait without spinning, changed nothing.
+`OPENBLAS_NUM_THREADS=1` fixed it
+([rammp-perception#6](https://github.com/rammp-org/rammp-perception/pull/6)):
+
+| Scene segmenter CPU at 10 Hz | Before | After |
+| --- | --- | --- |
+| YOLOE-26m-seg, GPU | 5.1 cores | 0.49 cores |
+| YOLOE-26s-seg, GPU | 5.1 cores | 0.46 cores |
+| YOLOE-26s-seg, DLA0 | 4.4 cores | 0.37 cores |
+| RF-DETR-Seg S | 2.6 cores | 0.54 cores |
+
+Frame time did not change. Freeing the CPU also sped up the nodes around the
+detector: the DLA path went from 8.1 to 9.3 Hz, and BoxerNet from 5.9 to 8.7
+Hz. Any module that runs numpy in a loop on the Jetson should set the same
+variable.
+
+### snorlax
+
+snorlax computes as fast as abra but delivered fewer messages. In each run
+the nodes logged the rates they published at, and the probe counted what
+arrived:
+
+| Finalized stack on snorlax | Published (node log) | Received |
+| --- | --- | --- |
+| YOLOE-26m detections | 9.6–9.9 Hz | 7.9 Hz |
+| BoxerNet 3D boxes | 5.0 Hz | 2.9 Hz |
+| SAM3 tracking | 4.7–4.8 Hz | 3.8 Hz |
+
+The difference is the kernel's UDP receive buffer. snorlax had Linux's
+default of 208 KB, and abra has 32 MB from
+`/etc/sysctl.d/60-ros-dds-buffers.conf`. These messages are megabytes each:
+a 1280 × 720 frame is 2.7 MB, and a detection with its label image is 1.8 MB.
+When the buffer cannot hold all of a message's fragments, DDS drops the whole
+message. The loss grows with the traffic: next to an uncapped SAM3 before the
+OpenBLAS fix, detections arrived at 5.4 Hz. Set the buffers as in
+[Developer setup](/setup#raise-the-dds-socket-buffers) on every Jetson.
+
+Per-frame compute on snorlax matched abra. With the replayed camera,
+camera-to-result latency there leaves out the camera driver: 56 ms for
+YOLOE-26m against 98 ms on abra with the Gemini.
+
+### Memory
+
+Memory is unified on the Orin, so GPU allocations count against the same
+64 GB. On snorlax, whose idle baseline was clean, the finalized stack used
+about 15 GB over the idle machine:
+
+| | Over idle |
+| --- | --- |
+| Scene camera, planner, foxglove, mocks | 2.6 GB |
+| + SAM3 loaded and tracking | 11.9 GB |
+| + YOLOE-26m and BoxerNet | 15 GB |
+
+abra reported about half that. It was already holding about 18 GB that no
+process accounted for when the runs started, and the stack reused it, so its
+memory numbers are not used here.
+
+## Repeating the measurements
+
+The bench lives in
+[rammp-deployments `perf/`](https://github.com/rammp-org/rammp-deployments/tree/dev/perf).
+It builds a manifest from `december_2026/`, brings each configuration up with
+sheppy, and writes one JSON file per run. `perf/report.py` turns those files
+into the tables on this page. On a Jetson with no camera, `perf/replay_camera.py`
+replays a recording in its place.
