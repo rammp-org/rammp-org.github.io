@@ -8,12 +8,11 @@ title: RAMMP Gen 1.5
 
 # RAMMP Gen 1.5
 
-Gen 1.5 is the Gen 1.2 chair rebuilt with new electronics. The chair has not
-been fabricated yet. Photos are added as the build completes.
+The Gen 1.2 chair with new electronics. Not yet fabricated; photos follow the
+build.
 
-The software the chair runs is on
-[Software versions & core repos](/software). Setting a Jetson up to develop
-against it is [Developer setup](/setup).
+Software: [Software versions & core repos](/software). Jetson setup:
+[Developer setup](/setup).
 
 ## The wheelchair base
 
@@ -53,33 +52,29 @@ against it is [Developer setup](/setup).
 
 ### The arm mount
 
-The arm bolts to the chair through an adapter plate that leans it **30°
-forward**, toward the front of the chair. Every robot that copies the Gen 1.5
-mount uses the same plate.
-
 | | |
 | --- | --- |
-| Part | `new_adapter_plate_v3` |
+| Part | `new_adapter_plate_v3`, between the chair and the arm base |
 | Lean | 30° forward: +30° about the chair's Y axis |
 | CAD | [new_adapter_plate_v3.STEP](https://github.com/rammp-org/rammp-hardware/raw/main/arm-mount/new_adapter_plate_v3.STEP), in [rammp-hardware](https://github.com/rammp-org/rammp-hardware) |
+| Used on | Every robot with the Gen 1.5 mount |
 
 > **Fill in** material, fasteners, and the plate's bolt pattern to the chair
 > frame.
 
-The software has to know about the lean. Gravity compensation in the arm
-driver and "keep level" constraints in the planner both assume the arm's base
-is level, and on a 30° plate they are 30° wrong. Each robot declares its
-mount rotation in `mount.yaml`; see [Frames and transforms](#frames-and-transforms).
+Arm-driver gravity compensation and planner "keep level" constraints assume a
+level arm base, so without the mount rotation they are 30° off. Each robot
+declares its mount rotation in `mount.yaml`
+([Frames and transforms](#frames-and-transforms)).
 
 ## Kinova Wrist Puck Attachment
 
-Kinova developed a custom wrist attachment that exposes I/O routed through the
-arm.
+A Kinova wrist attachment that exposes I/O routed through the arm.
 
 ## Compute
 
-Everything on the chair — the arm driver, the base, perception, and every
-module you contribute — runs on one NVIDIA Jetson.
+One NVIDIA Jetson runs everything on the chair: the arm driver, the base,
+perception, and every module.
 
 | | |
 | --- | --- |
@@ -88,26 +83,24 @@ module you contribute — runs on one NVIDIA Jetson.
 | Memory | 64 GB, shared between CPU and GPU |
 | Storage | WD_BLACK SN7100 1 TB NVMe SSD (`WDS100T4X0E`), M.2 2280, PCIe Gen4, in the dev kit's M.2 Key M slot |
 
-The GPU is why the [`rammp-cuda`](/publishing/base-images#rammp-cuda) base image
-exists. The NVMe is there because the dev kit's 64 GB of eMMC is not enough:
-`rammp-cuda` alone is several gigabytes, every module is its own image on top
-of it, and during an upgrade you hold more than one tag of each.
+- The GPU is the target of the [`rammp-cuda`](/publishing/base-images#rammp-cuda)
+  base image.
+- The NVMe is required: the 64 GB eMMC cannot hold `rammp-cuda` (several GB),
+  one image per module on top of it, and a second tag of each during upgrades.
 
 ### Real-time
 
-The Kinova Gen3 low-level driver closes a 1 kHz torque loop over Ethernet. A
-missed cycle trips the arm's watchdog and faults the arm. The base actuation
-loop has a deadline of its own. Both need
-bounded wake-up latency, which the stock JetPack kernel does not give, so the
-Jetson runs a PREEMPT_RT kernel with one core isolated for the control loop.
-The kernel version is on [Software versions](/software#versions). The settings
-that make it hold, and how to apply them, are in
+| Loop | Deadline |
+| --- | --- |
+| Kinova Gen3 low-level driver | 1 kHz torque loop over Ethernet; a missed cycle trips the arm's watchdog and faults the arm |
+| Base actuation | Its own deadline |
+
+Both need bounded wake-up latency, so the Jetson runs a PREEMPT_RT kernel with
+one core isolated for the control loop. Kernel version:
+[Software versions](/software#versions). Settings and how to apply them:
 [Developer setup](/setup#the-jetson).
 
 ## Sensor Suite
-
-The two RGBD cameras are settled and match flatbot's. The fisheye cameras are
-still being worked out.
 
 | Sensor | Count | Where | Purpose |
 | --- | --- | --- | --- |
@@ -117,35 +110,31 @@ still being worked out.
 
 ### Cameras
 
-Both RGBD cameras are Luxonis OAK PoE units. They take power and data over one
-Ethernet cable each, so nothing on the chair needs a USB run, and they compute
-depth on the camera rather than on the Jetson.
+The RGBD cameras match flatbot's. Both are Luxonis OAK PoE units: power and
+data over one Ethernet cable (no USB runs), depth computed on the camera.
 
-| Node | Camera | Why this one |
+| Node | Camera | Key property |
 | --- | --- | --- |
-| `scene_camera` | [OAK-D Pro W PoE](https://docs.luxonis.com/hardware/products/OAK-D%20Pro%20W%20PoE), OV9782 colour variant | 127° horizontal field of view: one camera sees the table and the arm's whole workspace |
-| `wrist_camera` | [OAK-D Pro PoE](/oak-d-pro-poe) | Active stereo with near-field tuning, down to roughly 15–30 cm |
+| `scene_camera` | [OAK-D Pro W PoE](https://docs.luxonis.com/hardware/products/OAK-D%20Pro%20W%20PoE), OV9782 colour variant | 127° horizontal field of view: the table and the arm's whole workspace |
+| `wrist_camera` | [OAK-D Pro PoE](/oak-d-pro-poe) | Active stereo, near-field tuned, minimum depth about 15–30 cm |
 
-Both run the same `rammp-suite-software/oak` image; only their parameters
-differ. A node finds its camera by device ID (MxID), so a camera's address can
-change under DHCP without touching the manifest. Setting one up from a laptop
-is on the [OAK-D Pro PoE](/oak-d-pro-poe) page.
+- Both run the `rammp-suite-software/oak` image with different parameters.
+- Each node finds its camera by device ID (MxID); the address can change under
+  DHCP without a manifest edit.
+- Laptop setup: [OAK-D Pro PoE](/oak-d-pro-poe).
 
-The other cameras in the labs are alternatives in the same manifest nodes and
-publish the same topics, so consumers cannot tell which one is selected:
+Alternatives in the same manifest nodes publish the same topics:
 
-| Camera | Node | Interface | Where it is used |
-| --- | --- | --- | --- |
-| Orbbec Gemini 336L | `scene_camera` | USB | dojo |
-| Intel RealSense D405 | `wrist_camera` | USB | dojo. Sees from about 7 cm. |
-| Intel RealSense D435i | `wrist_camera` | USB | Spare. Minimum depth is tens of centimetres. |
+| Camera | Node | Interface | Used on | Minimum depth |
+| --- | --- | --- | --- | --- |
+| Orbbec Gemini 336L | `scene_camera` | USB | dojo | |
+| Intel RealSense D405 | `wrist_camera` | USB | dojo | About 7 cm |
+| Intel RealSense D435i | `wrist_camera` | USB | Spare | Tens of centimetres |
 
 > **Fill in** the camera brackets' CAD (wrist and joystick module) once they
 > are in [rammp-hardware](https://github.com/rammp-org/rammp-hardware).
 
 ## Frames and transforms
-
-Every frame the chair publishes hangs off one tree:
 
 ```text
 base_link (chair)
@@ -157,32 +146,29 @@ base_link (chair)
                                     └── wrist_camera   static TF, from transforms/
 ```
 
-- **`arm_mount`** is the frame all Cartesian goals and arm state are in. It
-  shares `arm_base_link`'s origin but is level with the chair, so "+Z" means
-  up, not up the slope of the plate. It is level with the chair, not with
-  gravity: on a ramp it tilts with the chair.
-- **Arm frames** carry an `arm_` prefix; the chair owns `base_link`.
-- **Camera frames** are the roots of each driver's own tree. An OAK's tree is
-  rooted at `<camera>` itself (the colour sensor, body axes); a Gemini's or
-  RealSense's is rooted at `<camera>_link`.
-- **`base_link` → `arm_mount`** is not published yet. It waits on a chair
-  URDF that owns the chair's fixed geometry.
+- **`arm_mount`**: frame of all Cartesian goals and arm state. Same origin as
+  `arm_base_link`, level with the chair, so +Z is up rather than along the
+  plate. Level with the chair, not gravity: it tilts on a ramp.
+- **Arm frames** use an `arm_` prefix; the chair owns `base_link`.
+- **Camera frames** root each driver's own tree: `<camera>` for an OAK (the
+  colour sensor, body axes), `<camera>_link` for a Gemini or RealSense.
+- **`base_link` → `arm_mount`** is not published until a chair URDF owns the
+  chair's fixed geometry.
 
 ### Where each transform comes from
 
-Transform data lives with the deployment, one directory per robot, in
-`rammp-deployments/<deployment>/config/robots/<robot>/`:
+Per robot, in `rammp-deployments/<deployment>/config/robots/<robot>/`:
 
-| File | What it sets | Read by |
+| File | Sets | Read by |
 | --- | --- | --- |
-| `mount.yaml` | The rotation from `arm_mount` to `arm_base_link`, as `rpy_deg` | `arm_state_publisher`, which renders the arm's model once and publishes `/arm/robot_description`; the driver and cuRobo both read the model from it |
-| `transforms/*.yaml` | Camera mounts and any other fixed frame, in [rammp-calibration](https://github.com/rammp-org/rammp-calibration)'s `mounts.yaml` format | The `static_tf` node from [rammp-tools](https://github.com/rammp-org/rammp-tools), which publishes them on `/tf_static` |
+| `mount.yaml` | Rotation from `arm_mount` to `arm_base_link`, as `rpy_deg` | `arm_state_publisher`, which renders the arm's model and publishes `/arm/robot_description`; the driver and cuRobo read the model from that topic |
+| `transforms/*.yaml` | Camera mounts and other fixed frames, in [rammp-calibration](https://github.com/rammp-org/rammp-calibration)'s `mounts.yaml` format | The `static_tf` node from [rammp-tools](https://github.com/rammp-org/rammp-tools), which publishes them on `/tf_static` |
 
-`scripts/set_robot.py` points `config/robots/current` at the host's robot, and
-the nodes read that directory. A solved calibration replaces a
-`transforms/` file as-is.
+- `scripts/set_robot.py` points `config/robots/current` at the host's robot;
+  nodes read that directory.
+- A solved calibration replaces a `transforms/` file as-is.
 
-The Gen 1.5 mount:
+Gen 1.5 mount:
 
 ```yaml
 # config/robots/gen_1_5/mount.yaml
@@ -191,7 +177,7 @@ rpy_deg: [0.0, 30.0, 0.0] # new_adapter_plate_v3: 30° forward lean
 ```
 
 > **Fill in** `gen_1_5/transforms/` once the cameras are on the chair. Until
-> then, flatbot's below is the closest reference.
+> then, use flatbot's below.
 
 ### The robots in the labs
 
@@ -201,7 +187,7 @@ rpy_deg: [0.0, 30.0, 0.0] # new_adapter_plate_v3: 30° forward lean
 | `flatbot` | `snorlax` | Mobile test platform with the Gen 1.5 arm mount and electronics | 30° plate | OAK-D Pro W PoE | OAK-D Pro PoE |
 | `dojo` | `abra` | Bench arm cell | Level | Orbbec Gemini 336L | RealSense D405 |
 
-flatbot's camera mounts, hand-measured and not yet calibrated:
+flatbot camera mounts (hand-measured, not calibrated):
 
 | Child | Parent | xyz (m) | Rotation |
 | --- | --- | --- | --- |
