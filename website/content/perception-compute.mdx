@@ -23,7 +23,7 @@ perception images. The tooling to repeat them is in
 | `object_lifter` | BoxerNet 3D boxes for the segmenter's objects | at most 5 Hz: `max_rate_hz: 5.0` |
 
 Every perception container also runs with `OPENBLAS_NUM_THREADS=1`. Without
-it, numpy's thread pool keeps about five CPU cores busy per detector (see
+it, numpy's thread pool keeps up to five CPU cores busy per detector (see
 [CPU](#cpu)).
 
 At these rates, with SAM3 tracking one object, the whole stack costs this on
@@ -36,7 +36,7 @@ abra:
 | BoxerNet 3D boxes | 5.0 Hz, 281 ms |
 | GPU busy | 61% |
 | CPU | 27% of 12 cores |
-| Memory | 7.6 GB over the idle machine |
+| Memory | about 15 GB (measured on snorlax, see [Memory](#memory)) |
 | Module power | 39 W |
 
 GPU busy is the fraction of time the GPU was running anything (`GR3D_FREQ` in
@@ -90,8 +90,8 @@ next to SAM3 tracking at 5 Hz, with the OpenBLAS fix.
   cannot hold 10 Hz in the stack: 9.3 Hz alone, 7.7 Hz with BoxerNet, 7.2 Hz
   next to a busy GPU (the detection head falls back to the GPU). It is worth
   revisiting with an INT8 engine if the GPU becomes the limit.
-- **RF-DETR-Seg** gives the cleanest masks and has the same cost in the full
-  stack, but knows only COCO classes.
+- **RF-DETR-Seg** gives the cleanest masks and holds 10 Hz in the full stack
+  for a little more GPU (about 18% against 10%), but knows only COCO classes.
 - **NanoOWL** and **OWLv2** return boxes only. OWLv2 also takes the whole GPU.
 
 Mask and class quality are from the detector down-select of 2026-10-08 on abra,
@@ -185,7 +185,44 @@ variable.
 
 ### snorlax
 
-TODO
+snorlax computes as fast as abra but delivered fewer messages. In each run
+the nodes logged the rates they published at, and the probe counted what
+arrived:
+
+| Finalized stack on snorlax | Published (node log) | Received |
+| --- | --- | --- |
+| YOLOE-26m detections | 9.6–9.9 Hz | 7.9 Hz |
+| BoxerNet 3D boxes | 5.0 Hz | 2.9 Hz |
+| SAM3 tracking | 4.7–4.8 Hz | 3.8 Hz |
+
+The difference is the kernel's UDP receive buffer. snorlax had Linux's
+default of 208 KB, and abra has 32 MB from
+`/etc/sysctl.d/60-ros-dds-buffers.conf`. These messages are megabytes each:
+a 1280 × 720 frame is 2.7 MB, and a detection with its label image is 1.8 MB.
+When the buffer cannot hold all of a message's fragments, DDS drops the whole
+message. The loss grows with the traffic: next to an uncapped SAM3 before the
+OpenBLAS fix, detections arrived at 5.4 Hz. Set the buffers as in
+[Developer setup](/setup#raise-the-dds-socket-buffers) on every Jetson.
+
+Per-frame compute on snorlax matched abra. With the replayed camera,
+camera-to-result latency there leaves out the camera driver: 56 ms for
+YOLOE-26m against 98 ms on abra with the Gemini.
+
+### Memory
+
+Memory is unified on the Orin, so GPU allocations count against the same
+64 GB. On snorlax, whose idle baseline was clean, the finalized stack used
+about 15 GB over the idle machine:
+
+| | Over idle |
+| --- | --- |
+| Scene camera, planner, foxglove, mocks | 2.6 GB |
+| + SAM3 loaded and tracking | 11.9 GB |
+| + YOLOE-26m and BoxerNet | 15 GB |
+
+abra reported about half that. It was already holding about 18 GB that no
+process accounted for when the runs started, and the stack reused it, so its
+memory numbers are not used here.
 
 ## Repeating the measurements
 
