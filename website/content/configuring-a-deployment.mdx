@@ -53,17 +53,16 @@ overrides:
 For a docker alternative, sheppy writes `params:` to a ROS params file, mounts
 it at `/sheppy/params.yaml`, and appends
 `--ros-args --params-file /sheppy/params.yaml` to the container's command.
-Three things follow:
 
-- **Name the node when it matters.** The file is keyed by `ros_node_name`, or
-  by the wildcard `/**` without one. Set `ros_node_name` when a parameter must
-  land on one particular node. For example, the arm's `arbitration_mode` is
-  read-only after launch.
-- **Give a command.** With no `command:`, the appended arguments _replace_ the
-  image's CMD. That works only when the image's entrypoint runs the node
-  itself, as the camera images' does. Otherwise, write the command out, ending
-  at the node's executable.
-- **Not `ros2 launch`.** `ros2 launch` rejects the appended arguments
+- **`ros_node_name`.** The file is keyed by `ros_node_name`, or by the
+  wildcard `/**` without one. Set it when a parameter must land on one
+  particular node, such as the arm's `arbitration_mode`, which is read-only
+  after launch.
+- **An explicit command.** With no `command:`, the appended arguments
+  _replace_ the image's CMD. That works only when the image's entrypoint runs
+  the node itself, as the camera images' does. Otherwise, write the command
+  out, ending at the node's executable.
+- **No `ros2 launch`.** `ros2 launch` rejects the appended arguments
   (`unrecognized arguments: --ros-args`), and the container exits at start. An
   alternative that runs a launch file takes no `params:`, and its values are
   launch arguments in `command:`.
@@ -89,8 +88,8 @@ Some per-robot data is read by nodes as a file: the arm's mount rotation, and
 the fixed and calibrated transforms. It goes in the same directory.
 `scripts/set_robot.py` makes a robot the host's active one by pointing
 `config/robots/current` at its directory. The nodes that need it bind-mount
-`./config/robots/current` read-only at `/config/robot`. Only data that is a
-file by nature goes here, such as a URDF input or a calibration result. A
+`./config/robots/current` read-only at `/config/robot`. Only data a node
+reads as a file goes here, such as a URDF input or a calibration result. A
 single value is a parameter.
 
 Use the same robot name in `config/robots/<robot>/` and in
