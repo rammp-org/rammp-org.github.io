@@ -1,0 +1,121 @@
+---
+title: Reporting one frame at a time
+---
+
+import { Callout } from 'nextra/components'
+
+# Reporting one frame at a time
+
+A perception node answers one question per frame: what is in this image? A
+node that answers with the last thing it saw, so consumers always have a
+value, leaves a detection on the GUI after the object has gone and sends the
+arm to a position the target has moved away from. This page is the convention
+for what a perception message carries.
+
+## The convention
+
+Every perception message describes one frame and says whether it found
+anything.
+
+- **Carry the source frame's stamp.** The `header.stamp` of the output is the
+  stamp of the image it came from, not the time of publishing. A consumer can
+  then tell a fresh answer from a stale one, and look up TF at the right time.
+- **Publish absence explicitly.** When the pipeline finds nothing, publish a
+  message that says so, at the same rate, with `success` false and the pose
+  fields empty or sentinel. A consumer that has not heard "nothing" cannot
+  clear.
+- **Do not carry state across frames in the output.** If a planner needs the
+  last good pose, keep it inside the node and label it as the last good pose.
+  The published message is what this frame produced.
+- **Process each frame once.** Gate on the frame's stamp so a loop that runs
+  faster than the camera does not re-detect the same image and report it as
+  new confirmation.
+- **Filters reject for a bounded number of frames, then follow.** A smoother
+  may drop one or two outliers. On the third consecutive rejection the input
+  is not an outlier; the target has moved. Clear the history and follow it.
+
+<Callout type="warning">
+  `success` false is a result, not an error. Log it at debug level or not at
+  all. A perception node that warns on every frame without a target fills the
+  log the moment the target is put away.
+</Callout>
+
+## What the consumer does with it
+
+The GUI draws what the latest message says and nothing else: a bounding box
+when `success` is true, nothing when it is false. It does not remember the
+last box. A planner that needs a detection waits for a message with `success`
+true and a stamp newer than when it started asking, so a leftover from the
+previous task cannot satisfy it.
+
+## Minimal example
+
+A detector that publishes once per new frame, stamps the output with the
+image's time, and publishes a miss as a message:
+
+```python
+class CupDetector(Node):
+    def __init__(self):
+        super().__init__("cup_detector")
+        self._latest = None
+        self._last_stamp = None
+        self.create_subscription(Image, "image", self._on_image, 1)
+        self._pub = self.create_publisher(CupInfo, "cup_info", 10)
+        self.create_timer(0.2, self._tick)
+
+    def _on_image(self, msg):
+        self._latest = msg
+
+    def _tick(self):
+        frame = self._latest
+        if frame is None or frame.header.stamp == self._last_stamp:
+            return  # already reported this frame
+        self._last_stamp = frame.header.stamp
+        msg = CupInfo()
+        msg.header.stamp = frame.header.stamp  # the image's time, not now
+        pose = detect(frame)
+        msg.success = pose is not None
+        if msg.success:
+            msg.pose = pose
+        self._pub.publish(msg)  # a miss is published too
+```
+
+A smoother that holds through one or two outliers and then follows:
+
+```python
+class Smoother:
+    def __init__(self, jump_threshold, max_rejects=2):
+        self.jump_threshold = jump_threshold
+        self.max_rejects = max_rejects
+        self._history = []
+        self._last = None
+        self._reject_streak = 0
+
+    def update(self, pose):
+        if self._last is not None and distance(pose, self._last) > self.jump_threshold:
+            self._reject_streak += 1
+            if self._reject_streak <= self.max_rejects:
+                return self._last  # hold, once or twice
+            self._history.clear()  # sustained: the target moved
+        self._reject_streak = 0
+        self._history.append(pose)
+        self._last = mean(self._history[-5:])
+        return self._last
+```
+
+## What does not belong here
+
+- **A latched output topic** (`durability=TRANSIENT_LOCAL`) for detections.
+  Latching is for things that stay true until changed, like a calibration. A
+  detection stops being true one frame later.
+- **A lowered threshold to hide a miss.** A false detection is worse than a
+  miss, because the arm acts on it.
+- **Everything you computed.** The message carries what the consumer uses: the
+  box the operator looks at, not the mask behind it.
+
+## Related
+
+- **[Separating bulk data from control traffic](/patterns/separating-bulk-data-from-control-traffic)**
+  — why the message carries the box and not the mask.
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
+  — one message per frame is also the right rate.

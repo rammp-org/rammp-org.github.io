@@ -6,14 +6,31 @@ title: Common patterns
 
 Conventions that every RAMMP module follows. A module written in one lab
 then behaves the way the others expect when it runs on the chair. Each page
-describes one pattern: the problem, the convention, and a module that already
-uses it.
+describes one pattern: the problem, the convention, and a minimal
+implementation of it.
 
 ## Pages
 
 - **[Storing state across runs](/patterns/storing-state-across-runs)** — where a
   module keeps a value that has to survive a container restart, and how it
   copes when that value is gone.
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — what a node may subscribe to while nothing has asked it to work, and how
+  it brings sensors up and down with the task.
+- **[Publishing at the rate of the data](/patterns/publishing-at-the-rate-of-the-data)**
+  — how often a node reads, publishes and logs: at the rate of the source, on
+  change with a keepalive, and no faster than the consumers need.
+- **[Separating bulk data from control traffic](/patterns/separating-bulk-data-from-control-traffic)**
+  — how a button press stays ahead of video: separate channels, bulk data sent
+  on change and sized for the consumer, and a bounded worst-case frame.
+- **[Starting without the hardware](/patterns/starting-without-the-hardware)**
+  — how a node waits for a peer that is not there yet, and what it does when
+  the peer goes away later.
+- **[Waiting without spinning](/patterns/waiting-without-spinning)** — how a
+  callback waits for data without taking the node away from its executor.
+- **[Reporting one frame at a time](/patterns/reporting-one-frame-at-a-time)**
+  — what a perception message carries: one frame, its stamp, and an explicit
+  "nothing found".
 
 ## Related
 

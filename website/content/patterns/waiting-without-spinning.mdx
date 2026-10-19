@@ -1,0 +1,113 @@
+---
+title: Waiting without spinning
+---
+
+import { Callout } from 'nextra/components'
+
+# Waiting without spinning
+
+A ROS 2 node is driven by one executor. Every subscription, timer, service and
+action callback runs because that executor delivered it. When code inside a
+callback drives the node itself, with `rclpy.spin_once` or
+`spin_until_future_complete`, it takes the node over: the original executor's
+wait set no longer includes it, and from then on nothing is delivered, with no
+error anywhere. This page is the convention for waiting inside a callback.
+
+## The convention
+
+One executor spins the node, and no callback ever spins. A callback that has
+to wait waits on cached state, with a sleep and a deadline.
+
+- **Wait on a cache, not on the executor.** A subscription callback stores the
+  latest message. Code that needs a newer one loops on the cache with a short
+  sleep and a timeout. The executor keeps delivering while the loop sleeps,
+  because the loop is not the executor.
+- **Long callbacks get their own callback group.** An action that runs for
+  thirty seconds lives in a `ReentrantCallbackGroup` on a
+  `MultiThreadedExecutor`, so the subscriptions it is waiting on are still
+  serviced by other threads. A `SingleThreadedExecutor` with a blocking action
+  callback has the same problem.
+- **Call services asynchronously and wait on the future the same way.**
+  `call_async`, then poll `future.done()` with a sleep and a deadline. Never
+  `spin_until_future_complete` from a callback; it spins.
+- **Every wait has a deadline, and the deadline returns `None`**, not an
+  exception, unless the caller cannot continue. The caller decides whether a
+  missing frame is a skipped sample or a failed action.
+- **Never block on a terminal.** A node's only inputs are topics, services,
+  actions and parameters. If an interactive pause is useful on the bench, it
+  is a launch argument that defaults to off.
+
+<Callout type="info">
+  `tf2_ros.TransformListener(buffer, node, spin_thread=True)` runs its own
+  executor on a private node, which is why it is safe: it never touches yours.
+  The default `spin_thread=False` delivers `/tf` through your executor, which
+  is also fine, as long as nothing in your callbacks spins.
+</Callout>
+
+## Minimal example
+
+An action that waits for a fresh camera frame and for a service reply, both
+with a sleep loop and a deadline, on a multi-threaded executor:
+
+```python
+class Opener(Node):
+    def __init__(self):
+        super().__init__("opener")
+        group = ReentrantCallbackGroup()
+        self._latest = None
+        self.create_subscription(Image, "image", self._on_image, 1)
+        self._retract = self.create_client(Trigger, "retract", callback_group=group)
+        ActionServer(self, OpenDoor, "open", self._execute, callback_group=group)
+
+    def _on_image(self, msg):
+        self._latest = msg  # store it, nothing else
+
+    def _wait_for_frame(self, after_stamp, timeout_s):
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            frame = self._latest
+            if frame is not None and frame.header.stamp != after_stamp:
+                return frame
+            time.sleep(0.005)  # the executor keeps delivering meanwhile
+        return None
+
+    def _call(self, client, request, timeout_s):
+        future = client.call_async(request)
+        deadline = time.monotonic() + timeout_s
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return future.result() if future.done() else None
+
+    def _execute(self, goal):
+        frame = self._wait_for_frame(after_stamp=None, timeout_s=1.0)
+        if frame is None:
+            goal.abort()
+            return OpenDoor.Result()
+        if self._call(self._retract, Trigger.Request(), timeout_s=5.0) is None:
+            goal.abort()
+            return OpenDoor.Result()
+        goal.succeed()
+        return OpenDoor.Result()
+
+
+def main():
+    rclpy.init()
+    rclpy.spin(Opener(), executor=MultiThreadedExecutor())
+```
+
+## What does not belong here
+
+- **A helper that spins once to refresh.** That is the failure described
+  above.
+- **Threads that share the node with the executor and call into rclpy** for
+  anything but publishing. Publishing from a thread is safe, and so is
+  creating and destroying subscriptions. Spinning is not.
+- **Busy-waiting.** A loop without a sleep pins a core and starves the
+  executor threads it is waiting on.
+
+## Related
+
+- **[Starting without the hardware](/patterns/starting-without-the-hardware)**
+  — waiting for a peer at startup, which is a timer, not a loop in a callback.
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — the cache these loops read is filled only while a task is running.

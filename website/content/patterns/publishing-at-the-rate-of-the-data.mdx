@@ -1,0 +1,106 @@
+---
+title: Publishing at the rate of the data
+---
+
+import { Callout } from 'nextra/components'
+
+# Publishing at the rate of the data
+
+A publisher decides how much every subscriber pays. On the Orin, each message
+costs a Python subscriber 1.5 to 2 ms whether or not the value changed, so a
+node that republishes the same numbers from a fast timer spends other nodes'
+CPU as well as its own. This page is the convention for how often a node
+reads, publishes and logs.
+
+## The convention
+
+Never loop faster than the source. If a device delivers data at a rate, read
+it at that rate and publish it when it arrives.
+
+- **Block on the source instead of polling it.** A thread that sits in
+  `serial.readline()` wakes exactly when a line arrives. A timer that checks
+  `in_waiting` a thousand times a second wakes a thousand times a second.
+- **Publish on arrival.** When telemetry comes in, convert it and publish it
+  in the same callback. Do not cache it for a timer to re-send.
+- **Gate loops on a new stamp.** A processing loop that runs faster than its
+  camera compares the frame's header stamp with the last one it processed and
+  returns when they match.
+
+**State goes out on change, with a slow keepalive.** State that changes
+rarely, such as a state machine or the set of allowed commands, is published
+when it changes and then once a second, so a late subscriber still gets it
+and a consumer can tell a quiet publisher from a dead one. The timer that
+checks for a change can run at 10 Hz; the message does not.
+
+**Inputs are forwarded as they arrive, and the keepalive skips a tick when
+something was just sent.** A device that needs its input above some rate gets
+the user's input the moment it arrives, plus a keepalive that only fills the
+gaps. The input has no added latency and the wire carries no duplicates.
+
+**The wire rate is chosen for the consumers.** A feedback loop can run faster
+than it publishes. A driver that reads its hardware at 100 Hz for its own
+watchdog and collision check publishes on every Nth read, at the rate the
+fastest subscriber uses.
+
+<Callout type="warning">
+  Lowering a published rate is the one change on this page that a subscriber
+  can see on the wire. Check every subscriber first, say what you found in the
+  PR, and keep the internal loop at its original rate. Removing a republish of
+  unchanged values is not a rate change and needs no such review.
+</Callout>
+
+**Logs follow the same rule.** A log line per message is a publish per message
+to a slow subscriber, and the `ros2 launch` wrapper that relays it pays too.
+Log on change, on error, or with `throttle_duration_sec`. If the node is not
+yours, set its log level in the launch file.
+
+## Minimal example
+
+A serial bridge that blocks on the port, publishes telemetry on arrival, and
+publishes its state on change with a one-second keepalive:
+
+```python
+class Bridge(Node):
+    def __init__(self):
+        super().__init__("bridge")
+        self._port = serial.Serial("/dev/ttyACM0", 115200)
+        self._telemetry_pub = self.create_publisher(JointState, "joint_states", 10)
+        self._state_pub = self.create_publisher(SystemState, "system_state", 10)
+        self._last_state = None
+        self._last_state_time = 0.0
+        threading.Thread(target=self._read_loop, daemon=True).start()
+        self.create_timer(0.1, self._publish_state)  # checks at 10 Hz
+
+    def _read_loop(self):
+        while rclpy.ok():
+            line = self._port.readline()  # wakes only when the device sends
+            self._telemetry_pub.publish(parse_telemetry(line))
+
+    def _publish_state(self):
+        msg = self._build_state()
+        key = (msg.state, tuple(msg.supported_user_inputs))
+        now = time.monotonic()
+        if key != self._last_state or now - self._last_state_time >= 1.0:
+            self._state_pub.publish(msg)  # on change, or once a second
+            self._last_state = key
+            self._last_state_time = now
+```
+
+Publishing from the reader thread is safe; spinning from it is not. See
+[Waiting without spinning](/patterns/waiting-without-spinning).
+
+## What does not belong here
+
+- **A timer in place of a callback.** If the data is in a callback, publish it
+  there. A timer is for work that has no natural trigger.
+- **A sleep in a callback to wait for data.** It blocks an executor thread and
+  the data still arrives through the executor. Subscribe to it instead.
+- **A small message published fast.** The subscriber's cost is per message,
+  not per byte. A 100 Hz `Bool` costs as much as a 100 Hz `JointState`.
+
+## Related
+
+- **[Subscribing only while working](/patterns/subscribing-only-while-working)**
+  — the same rule from the subscriber's side.
+- **[Reporting one frame at a time](/patterns/reporting-one-frame-at-a-time)**
+  — one message per frame is the right rate for perception output.
