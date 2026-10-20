@@ -153,7 +153,8 @@ base_link (chair)
 - **Camera frames** root each driver's own tree: `<camera>` for an OAK (the
   colour sensor, body axes), `<camera>_link` for a Gemini or RealSense.
 - **`base_link` → `arm_mount`** is not published until a chair URDF owns the
-  chair's fixed geometry.
+  chair's fixed geometry. flatbot has no chair, so its `transforms/world.yaml`
+  roots the tree at `world` instead: `world` → `arm_mount`, identity.
 
 ### Where each transform comes from
 
@@ -192,4 +193,4 @@ flatbot camera mounts (hand-measured, not calibrated):
 | Child | Parent | xyz (m) | Rotation |
 | --- | --- | --- | --- |
 | `scene_camera` | `arm_mount` | `[0.20, -0.50, 0.40]` | Facing +X, mounted upside down (180° roll) |
-| `wrist_camera` | `arm_end_effector_link` | `[-0.10, 0.0, 0.10]` | Looking along the tool (+Z), mounted upside down, its +Z toward the gripper axis (90° about Y) |
+| `wrist_camera` | `arm_end_effector_link` | `[0.0, 0.10, -0.10]` | Looking along the tool (+Z), mounted upside down: its +Z points back at the arm (−Y). Checked against a live image |
