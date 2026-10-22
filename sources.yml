@@ -23,3 +23,9 @@
   title: Teleoperating the arm
   # docs/superpowers holds the design spec and plan; not user-facing.
   exclude: [superpowers]
+- repo: rammp-org/rammp-rtps
+  slug: rammp-rtps
+  title: Embedded interfaces (RTPS)
+  # docs/ holds only user-facing pages, none of the default exclusions, and
+  # compose.mjs errors on a pattern that matches nothing.
+  exclude: []
