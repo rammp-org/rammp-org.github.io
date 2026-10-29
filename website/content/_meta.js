@@ -21,5 +21,6 @@ export default {
   'rammp-teleop': 'Teleoperating the arm',
   'controlling-the-base': 'Controlling the base',
   'oak-d-pro-poe': 'OAK-D Pro PoE camera',
+  'perception-compute': 'Perception compute budget',
   contributing: { display: 'hidden' }
 }
