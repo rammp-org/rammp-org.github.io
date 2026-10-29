@@ -1,0 +1,160 @@
+---
+title: Robotiq 2F-85 gripper
+---
+
+import { Callout } from 'nextra/components'
+
+# Robotiq 2F-85 gripper
+
+The [Robotiq 2F-85](https://robotiq.com/products/adaptive-grippers) is a two-finger adaptive
+gripper with an 85 mm stroke. It sits on the Gen3's wrist and is driven through the arm's
+interconnect, so it has no cable, network address or driver of its own. Every command goes
+through [kinova-gen3-ros2](/kinova-gen3-ros2).
+
+This page covers how a command reaches the fingers, what the gripper reports, how it actually
+moves, and how to command it so that it moves smoothly at a speed you choose.
+
+<Callout>
+  The numbers below were measured on the Dojo cell on 2026-10-29, with the gripper only and no
+  arm motion, through the `kinova-gen3-ros2` nightly. The tool, raw data and full report are in
+  [rammp-kitchen-capability-engines](https://github.com/rammp-org/rammp-kitchen-capability-engines)
+  under `scripts/gripper_char/` and `docs/gripper-characterization.md`. Another gripper unit may
+  differ slightly. Re-measure it with the same tool before trusting a timing-critical constant.
+</Callout>
+
+## How a command reaches the fingers
+
+You publish `/setpoint/gripper` (`rammp_arm_interfaces/GripperSetpoint`). Each field is 0..1:
+
+| Field | Meaning |
+| --- | --- |
+| `position` | 0 is open, 1 is closed. |
+| `speed` | The finger speed. See [Speed](#speed): 0 does **not** move the fingers. |
+| `force` | A ceiling on the motor current, not a force setpoint. |
+| `token` | The control token. The arbiter checks it when arbitration is enabled. |
+
+The driver clamps each field to 0..1 and stamps it, as a percentage, into every frame of the
+arm's 1 kHz BaseCyclic command, in the interconnect gripper's `motor_cmd`. The gripper
+**latches the last command**: once you stop publishing, it keeps the last position, speed and
+force. The setpoint is accepted during goals and streams, so you can move the fingers while the
+arm moves.
+
+## What it reports
+
+| Topic | Rate | Carries |
+| --- | --- | --- |
+| `/gripper_state` | 20 Hz | `position` (0..1), `effort` (current / max current, not newtons), `current` (A), `present` |
+| `/joint_states`, `*_robotiq_85_left_knuckle_joint` | ~50 Hz | position × 0.8 rad. Velocity and effort are NaN. |
+
+The knuckle in `/joint_states` is the fastest position signal available. The driver drops the
+motor's velocity from the arm's feedback.
+
+<Callout type="warning">
+  About 1 sample in 3,000 of `/gripper_state`, and 1 in 10,000 of the knuckle, reads exactly
+  `0.0` in the middle of a stroke. Don't act on one sample alone.
+</Callout>
+
+## How it moves
+
+A motion is a trapezoid with nearly vertical edges. The fingers start about 50 ms after the
+setpoint, run at the commanded speed, and stop dead on the setpoint with no overshoot.
+
+### Speed
+
+For any `speed` > 0:
+
+```
+finger speed ≈ 20.9 + 128.4 × speed   mm/s     (speed ≤ 0.75; ±0.5 mm/s)
+```
+
+![Commanded speed against measured finger speed](/gripper-2f85-speed.png)
+
+| speed | 0 | 0.005 | 0.01 | 0.1 | 0.2 | 0.3 | 0.5 | 0.75 | 1.0 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mm/s | **0** | 21.8 | 22.2 | 33.7 | 46.6 | 58.9 | 84.1 | 118 | 161 closing, 147 opening |
+
+- **There is a floor, not a dead band.** `speed` 0 does not move the fingers at all, and any
+  `speed` above 0 moves them at about 21 mm/s or faster. The 2F-85 cannot move continuously
+  slower than that.
+- **Closing and opening run at the same speed** up to 0.75. Above that, closing is faster.
+- **`force` has no effect on free-air speed.**
+- **Repeats agree to ±0.1 mm/s.**
+
+### Latency
+
+From publishing a setpoint to the fingers moving: **42–55 ms median**, p90 under 60 ms, worst
+case 68 ms. Closing is about 7 ms quicker than opening, and the speed setting barely matters.
+
+### Position
+
+- **Accuracy:** after a move, the reported position equals the command to within one step of
+  1/255 (0.3 mm).
+- **Repeatability:** there is no spread between repeats and no difference by the direction of
+  approach.
+- **Full close:** a full close in free air reads 0.991.
+- **The gap in mm:** mapping position to the physical gap between the fingers has not been
+  measured.
+
+### Restarting
+
+Once the fingers have stopped, they wait about **0.1 s** before following a setpoint that has
+moved on. This is the stair-step you see when a position ramp is streamed faster than the
+fingers need to go: they catch the setpoint, stop, wait, and jump. Each step is about the
+ramp's rate × 0.1 s.
+
+### Contact
+
+On an object the fingers stop dead, so position is the signal to watch. Once they hold, the
+current drops to about 0.05 A whatever the `force`, so current tells you nothing about a stall at
+20 Hz. At `force` 1 the fingers keep creeping for up to 0.6 s as they squeeze.
+
+Detecting the stall from position:
+
+- two unchanged `/gripper_state` samples: **0.10–0.14 s** after the stop;
+- three unchanged knuckle samples: **0.06 s** after the stop.
+
+## Commanding it smoothly
+
+To reach `target` in `T` seconds without stair-steps:
+
+- **The rate:** `rate = |target − current| × 85 mm / T`.
+- **At 21 mm/s or faster:** send `target` itself at
+  `speed = clamp((rate − 20.9) / 128.4, 0.01, 1)`. The fingers make one continuous move and
+  arrive about 50 ms after `T`. Do **not** stream a position ramp with a faster speed: the
+  fingers would keep catching it.
+- **Slower than 21 mm/s:** the fingers cannot go that slowly. Stream the position ramp at 50 Hz
+  with `speed` 0.01. They follow it in 0.3 mm steps, which looks continuous, and arrive on time.
+- **A step:** send the target at `speed` 1.
+- **Settling:** the fingers are done once they are within 0.01 of the target. If they stop short
+  (on an object), they are done once they have been still for 0.1 s (two `/gripper_state`
+  samples). Don't judge stillness until about 0.15 s after the command, to cover the latency.
+
+In a capability, `self.arm.gripper_ramp(position, by=T)` does exactly this, and `self.arm.gripper()`
+settles the same way. The constants are `GRIPPER_V0_M_S`, `GRIPPER_K_M_S`, `GRIPPER_MIN_SPEED`,
+`GRIPPER_ARRIVED`, `GRIPPER_JUDGE_AFTER_S` and `GRIPPER_STILL_S` in
+`capability_engine/capability_engine/arm.py`.
+
+In this test, the gripper closes 0 → 0.8 while cuRobo's trajectory moves the tool 15 cm (2.1 s).
+One setpoint at the computed speed finished 3–17 ms after the arm, 0.16 mm off a straight line.
+The old approach, a position ramp streamed at 3× the needed speed, finished 60–120 ms late in
+3–4 mm steps.
+
+![Gripper closing during a cuRobo trajectory: one setpoint at the computed speed (left, right) against a streamed ramp (middle)](/gripper-2f85-demo.png)
+
+The gripper moves at a constant speed while the arm follows cuRobo's smooth profile. The two
+start and end together but are up to about 15 % of the move apart in between.
+
+## Re-measuring
+
+The tool runs on a cell through `hil`, in the driver's own image. It publishes only
+`/setpoint/gripper`, refuses to start if anything else does, and returns the fingers to where
+they started. From rammp-kitchen-capability-engines:
+
+```bash
+scripts/gripper_char/run.sh probe                                  # read-only: rates, position
+scripts/gripper_char/run.sh run speed --reps 2 --out /data/<dir>   # moves the fingers
+scripts/gripper_char/run.sh demo_trajectory.py --dry-run           # plans only; without it, moves the arm
+```
+
+The plans are `speed`, `force`, `position`, `latency`, `ramps` and `contact`. The `contact` plan
+needs an object in the jaws. `analyze.py` turns a run's raw data into metrics and plots.
