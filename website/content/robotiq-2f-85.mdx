@@ -10,9 +10,6 @@ The [Robotiq 2F-85](https://robotiq.com/products/adaptive-grippers) is a two-fin
 gripper with an 85 mm stroke. It sits on the Gen3's wrist and is driven through the arm's
 interconnect, so it has no cable or network address of its own.
 
-This page covers what the gripper takes and reports, how it moves, and how to command it to
-move smoothly at a speed you choose.
-
 <Callout>
   The numbers below were measured on one 2F-85 on the Dojo cell on 2026-10-29, with the gripper
   only and no arm motion, except where a section says otherwise. Another unit may differ
@@ -20,7 +17,7 @@ move smoothly at a speed you choose.
   position × the 85 mm stroke.
 </Callout>
 
-## What it takes and reports
+## Commands and feedback
 
 A command has three values, each 0..1:
 
@@ -70,8 +67,8 @@ finger speed ≈ 20.9 + 128.4 × speed   mm/s     (speed ≤ 0.75; ±0.5 mm/s)
 
 ### Latency
 
-From sending a setpoint through the arm's interconnect to the fingers moving: **42–55 ms
-median**, p90 under 60 ms, worst case 68 ms. Closing is about 7 ms quicker than opening. The
+From setpoint to first finger motion, through the arm's interconnect: **42–55 ms median**, p90
+under 60 ms, worst case 68 ms. Closing is about 7 ms quicker than opening. The
 `speed` setting has little effect.
 
 ### Position
