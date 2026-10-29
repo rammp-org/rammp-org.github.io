@@ -11,15 +11,16 @@ gripper with an 85 mm stroke. It sits on the Gen3's wrist and is driven through 
 interconnect, so it has no cable, network address or driver of its own. Every command goes
 through [kinova-gen3-ros2](/kinova-gen3-ros2).
 
-This page covers how a command reaches the fingers, what the gripper reports, how it actually
-moves, and how to command it so that it moves smoothly at a speed you choose.
+This page covers how a command reaches the fingers, what the gripper reports, how it moves, and
+how to command it to move smoothly at a speed you choose.
 
 <Callout>
   The numbers below were measured on the Dojo cell on 2026-10-29, with the gripper only and no
   arm motion, through the `kinova-gen3-ros2` nightly. The tool, raw data and full report are in
   [rammp-kitchen-capability-engines](https://github.com/rammp-org/rammp-kitchen-capability-engines)
   under `scripts/gripper_char/` and `docs/gripper-characterization.md`. Another gripper unit may
-  differ slightly. Re-measure it with the same tool before trusting a timing-critical constant.
+  differ slightly: re-measure yours with the same tool before relying on a timing-critical
+  constant. Distances in mm are position × the 85 mm stroke.
 </Callout>
 
 ## How a command reaches the fingers
@@ -46,8 +47,8 @@ arm moves.
 | `/gripper_state` | 20 Hz | `position` (0..1), `effort` (current / max current, not newtons), `current` (A), `present` |
 | `/joint_states`, `*_robotiq_85_left_knuckle_joint` | ~50 Hz | position × 0.8 rad. Velocity and effort are NaN. |
 
-The knuckle in `/joint_states` is the fastest position signal available. The driver drops the
-motor's velocity from the arm's feedback.
+The knuckle in `/joint_states` is the fastest position signal available. Its velocity is NaN
+because the driver drops the motor's velocity from the arm's feedback.
 
 <Callout type="warning">
   About 1 sample in 3,000 of `/gripper_state`, and 1 in 10,000 of the knuckle, reads exactly
@@ -56,7 +57,7 @@ motor's velocity from the arm's feedback.
 
 ## How it moves
 
-A motion is a trapezoid with nearly vertical edges. The fingers start about 50 ms after the
+The velocity profile of a move is a trapezoid with nearly vertical edges. The fingers start about 50 ms after the
 setpoint, run at the commanded speed, and stop dead on the setpoint with no overshoot.
 
 ### Speed
@@ -83,30 +84,30 @@ finger speed ≈ 20.9 + 128.4 × speed   mm/s     (speed ≤ 0.75; ±0.5 mm/s)
 ### Latency
 
 From publishing a setpoint to the fingers moving: **42–55 ms median**, p90 under 60 ms, worst
-case 68 ms. Closing is about 7 ms quicker than opening, and the speed setting barely matters.
+case 68 ms. Closing is about 7 ms quicker than opening. The `speed` setting has little effect.
 
 ### Position
 
 - **Accuracy:** after a move, the reported position equals the command to within one step of
   1/255 (0.3 mm).
-- **Repeatability:** there is no spread between repeats and no difference by the direction of
-  approach.
-- **Full close:** a full close in free air reads 0.991.
-- **The gap in mm:** mapping position to the physical gap between the fingers has not been
+- **Repeatability:** repeats show no spread, and approaching from either direction lands in the
+  same place.
+- **Full close:** in free air, a full close reads 0.991.
+- **Gap in mm:** the mapping from position to the physical gap between the fingers has not been
   measured.
 
 ### Restarting
 
 Once the fingers have stopped, they wait about **0.1 s** before following a setpoint that has
-moved on. This is the stair-step you see when a position ramp is streamed faster than the
-fingers need to go: they catch the setpoint, stop, wait, and jump. Each step is about the
-ramp's rate × 0.1 s.
+moved on. This causes the stair-steps you see when you stream a position ramp with a `speed`
+faster than the ramp itself: the fingers catch the setpoint, stop, wait, and jump. Each step is
+about the ramp's rate × 0.1 s.
 
 ### Contact
 
 On an object the fingers stop dead, so position is the signal to watch. Once they hold, the
 current drops to about 0.05 A whatever the `force`, so current tells you nothing about a stall at
-20 Hz. At `force` 1 the fingers keep creeping for up to 0.6 s as they squeeze.
+20 Hz. At `force` 1, though, the fingers keep creeping for up to 0.6 s as they squeeze.
 
 Detecting the stall from position:
 
@@ -120,8 +121,8 @@ To reach `target` in `T` seconds without stair-steps:
 - **The rate:** `rate = |target − current| × 85 mm / T`.
 - **At 21 mm/s or faster:** send `target` itself at
   `speed = clamp((rate − 20.9) / 128.4, 0.01, 1)`. The fingers make one continuous move and
-  arrive about 50 ms after `T`. Do **not** stream a position ramp with a faster speed: the
-  fingers would keep catching it.
+  arrive about 50 ms after `T`. Do **not** stream a position ramp with a higher `speed`: the
+  fingers keep catching up to it and stair-step.
 - **Slower than 21 mm/s:** the fingers cannot go that slowly. Stream the position ramp at 50 Hz
   with `speed` 0.01. They follow it in 0.3 mm steps, which looks continuous, and arrive on time.
 - **A step:** send the target at `speed` 1.
@@ -129,20 +130,20 @@ To reach `target` in `T` seconds without stair-steps:
   (on an object), they are done once they have been still for 0.1 s (two `/gripper_state`
   samples). Don't judge stillness until about 0.15 s after the command, to cover the latency.
 
-In a capability, `self.arm.gripper_ramp(position, by=T)` does exactly this, and `self.arm.gripper()`
+In a capability, `self.arm.gripper_ramp(position, by=T)` does this, and `self.arm.gripper()`
 settles the same way. The constants are `GRIPPER_V0_M_S`, `GRIPPER_K_M_S`, `GRIPPER_MIN_SPEED`,
 `GRIPPER_ARRIVED`, `GRIPPER_JUDGE_AFTER_S` and `GRIPPER_STILL_S` in
 `capability_engine/capability_engine/arm.py`.
 
-In this test, the gripper closes 0 → 0.8 while cuRobo's trajectory moves the tool 15 cm (2.1 s).
+On the arm, the gripper moved 0 → 0.8 while a cuRobo trajectory moved the tool 15 cm in 2.1 s.
 One setpoint at the computed speed finished 3–17 ms after the arm, 0.16 mm off a straight line.
 The old approach, a position ramp streamed at 3× the needed speed, finished 60–120 ms late in
 3–4 mm steps.
 
-![Gripper closing during a cuRobo trajectory: one setpoint at the computed speed (left, right) against a streamed ramp (middle)](/gripper-2f85-demo.png)
+![Gripper moving 0 → 0.8 during a cuRobo trajectory, closing on the way out (top) and opening on the way back (bottom): one setpoint at the computed speed (left, right) against a streamed ramp (middle)](/gripper-2f85-demo.png)
 
-The gripper moves at a constant speed while the arm follows cuRobo's smooth profile. The two
-start and end together but are up to about 15 % of the move apart in between.
+The gripper moves at a constant speed while the arm follows cuRobo's smooth profile. They start
+and end together, but in between they are up to about 15 % of the move apart.
 
 ## Re-measuring
 
