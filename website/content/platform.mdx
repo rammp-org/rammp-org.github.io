@@ -156,8 +156,12 @@ base_link (chair)
 - **Camera frames** root each driver's own tree: `<camera>` for an OAK (the
   colour sensor, body axes), `<camera>_link` for a Gemini or RealSense.
 - **`base_link` → `arm_mount`** is not published until a chair URDF owns the
-  chair's fixed geometry. flatbot has no chair, so its `transforms/world.yaml`
-  roots the tree at `world` instead: `world` → `arm_mount`, identity.
+  chair's fixed geometry. flatbot's frames have no chair, so its
+  `transforms/world.yaml` roots the tree at `world` instead: `world` →
+  `arm_mount`, identity. Its planner does model one: the Gen1.2 MEBot chair, a
+  seat and an occupant, as collision layers built from best guesses that nobody
+  has measured on the chair yet. See
+  [Motion planning: collision model](/collision-model).
 
 ### Where each transform comes from
 
