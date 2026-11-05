@@ -166,10 +166,15 @@ export async function loadCollisionModel(repoDir, plannerRel) {
     if (!(key in planner)) fail(plannerFile, `is missing the '${key}' entry`)
   }
   const settings = { ...PLANNER_DEFAULTS, ...(isMapping(planner.planner) ? planner.planner : {}) }
-  if (!(isNumber(settings.world_padding) && settings.world_padding >= 0)) {
-    fail(plannerFile, `planner.world_padding must be a number >= 0, got ${JSON.stringify(settings.world_padding)}`)
+  for (const key of ['world_padding', 'collision_activation_distance']) {
+    if (!(isNumber(settings[key]) && settings[key] >= 0)) {
+      fail(plannerFile, `planner.${key} must be a number >= 0, got ${JSON.stringify(settings[key])}`)
+    }
   }
-  const noPad = new Set(settings.no_pad_names ?? [])
+  const noPad = settings.no_pad_names ?? []
+  if (!Array.isArray(noPad) || !noPad.every(n => typeof n === 'string')) {
+    fail(plannerFile, `planner.no_pad_names must be a list of box names, got ${JSON.stringify(noPad)}`)
+  }
 
   // ---- robot file ----
   const robotFile = resolve(plannerFile, planner.robot, 'robot')
@@ -263,10 +268,27 @@ export async function loadCollisionModel(repoDir, plannerRel) {
     boxes.push({ id, layer, name: o.name, c: o.position, d: o.dims, rpy_deg: o.rpy_deg, pad })
   }
   const pad = settings.world_padding
-  for (const o of obstacles) add(worldFile, o.name, 'scene', o, noPad.has(o.name) ? 0 : pad)
+  for (const o of obstacles) add(worldFile, o.name, 'scene', o, noPad.includes(o.name) ? 0 : pad)
   for (const o of objects) add(worldFile, `obj_${o.name}`, 'scene', o, pad)
   for (const layer of layers) {
     for (const o of layer.obstacles) add(layer.file, `${layer.name}/${o.name}`, layer.name, o, pad)
+  }
+
+  // What the planner does not check but the page depends on: generated layers
+  // fitted to the arm where mount.yaml puts it. Shown on the page, not fatal:
+  // the planner plans with them all the same.
+  const warnings = []
+  const placed = layers.filter(l => isMapping(l.meta.arm_base_in_mebot))
+  for (const layer of layers) {
+    const tilt = layer.meta.arm_base_joint?.rpy_deg
+    if (Array.isArray(tilt) && tilt.some((v, i) => v !== mountRpy[i])) {
+      warnings.push(`${rel(layer.file)} was generated for the arm tilted rpy_deg ${JSON.stringify(tilt)}, ` +
+        `but ${rel(mountFile)} says ${JSON.stringify(mountRpy)}: regenerate the layers`)
+    }
+  }
+  const where = l => JSON.stringify(l.meta.arm_base_in_mebot.position)
+  if (placed.some(l => where(l) !== where(placed[0]))) {
+    warnings.push(`the layers disagree on where the arm sits on the chair: ${placed.map(l => `${l.name} ${where(l)}`).join(', ')}`)
   }
 
   const curoboDir = path.dirname(plannerFile)
@@ -292,7 +314,8 @@ export async function loadCollisionModel(repoDir, plannerRel) {
       ...layers.map(l => ({ name: l.name, source: l.source, file: path.relative(curoboDir, l.file), excludable: l.excludable }))
     ],
     boxes,
-    mebot: mebotMeta(layers)
+    mebot: mebotMeta(layers),
+    warnings
   }
 
   // Every link with spheres, and the tool, must hang off the chain.
@@ -338,6 +361,7 @@ export async function writeCollisionModels(repoDir, source, into = outDir) {
     await writeFile(path.join(into, `${model.id}.json`), JSON.stringify(model))
     const counts = model.layers.map(l => `${l.name} ${model.boxes.filter(b => b.layer === l.name).length}`)
     console.log(`collision-models: ${model.id}: ${model.boxes.length} boxes (${counts.join(', ')})`)
+    for (const w of model.warnings) console.warn(`collision-models: ${model.id}: warning: ${w}`)
   }
 }
 

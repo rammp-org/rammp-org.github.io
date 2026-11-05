@@ -9,7 +9,7 @@ import s from './viewer.module.css'
 const DEGR = 180 / Math.PI
 const STORE = 'rammp-collision-model'
 // Where the arm parks on flatbot (snorlax), read from /joint_states.
-const REST = { flatbot: [0.067, -1.898, -3.137, -2.269, -0.211, -0.684, 1.725] }
+const REST = { 'december_2026-flatbot': [0.067, -1.898, -3.137, -2.269, -0.211, -0.684, 1.725] }
 const COLORED = ['platform', 'seat', 'person', 'floor', 'scene']
 const layerVar = layer => `--cm-${COLORED.includes(layer) ? layer : 'other'}`
 const layerColor = layer => `var(${layerVar(layer)})`
@@ -36,7 +36,7 @@ function store(key, value) {
 
 function posesOf(model) {
   return [
-    ...(REST[model.robot] ? [{ key: 'rest', label: 'Rest (snorlax park)', q: REST[model.robot] }] : []),
+    ...(REST[model.id] ? [{ key: 'rest', label: 'Rest (snorlax park)', q: REST[model.id] }] : []),
     { key: 'retract', label: 'Retract (IK seed)', q: model.retract },
     { key: 'zero', label: 'All zero', q: model.joint_names.map(() => 0) }
   ]
@@ -128,7 +128,18 @@ function hull(points) {
   return [...half(p), ...half(p.reverse())]
 }
 
+// Frees what a group holds and empties it; `shared` geometry and materials stay.
+function release(group, shared = new Set()) {
+  group.traverse(o => {
+    if (o === group) return
+    for (const r of [o.geometry, ...[o.material].flat()]) if (r && !shared.has(r)) r.dispose()
+  })
+  group.clear()
+}
+
+// The box around `points`, or around the origin when there are none.
 function aabb(points) {
+  if (points.length === 0) points = [[0, 0, 0]]
   const lo = [0, 1, 2].map(i => Math.min(...points.map(p => p[i])))
   const hi = [0, 1, 2].map(i => Math.max(...points.map(p => p[i])))
   return { lo, hi }
@@ -214,7 +225,7 @@ export default function Viewer({ models }) {
   const qText = useRef(null)
   function applyText() {
     const input = qText.current
-    const nums = (input.value.match(/-?\d+(\.\d+)?(e-?\d+)?/gi) || []).map(Number)
+    const nums = (input.value.match(/[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?/gi) || []).map(Number)
     if (nums.length !== model.joint_names.length) {
       input.setCustomValidity(`Give ${model.joint_names.length} joint angles in radians.`)
       input.reportValidity()
@@ -325,7 +336,9 @@ export default function Viewer({ models }) {
   useEffect(() => {
     const g = gl.current
     if (!g) return
-    g.world.clear()
+    release(g.world)
+    g.sphere?.dispose()
+    Object.values(g.mats ?? {}).forEach(m => m.dispose())
     g.boxMeshes = []
     g.scene.background = color('--cm-sheet')
     g.layers = {}
@@ -369,8 +382,13 @@ export default function Viewer({ models }) {
     g.world.add(g.pad, new THREE.AxesHelper(0.15))
     g.arm = new THREE.Group()
     g.sel = new THREE.Group()
-    g.world.add(g.arm, g.sel)
+    g.tool = new THREE.AxesHelper(0.07)
+    g.tool.matrixAutoUpdate = false
+    g.world.add(g.arm, g.sel, g.tool)
     g.sphere = new THREE.SphereGeometry(1, 20, 14)
+    const sphereMat = name => new THREE.MeshLambertMaterial({ color: color(name), transparent: true, opacity: 0.55, depthWrite: false })
+    g.mats = { arm: sphereMat('--cm-arm'), hit: sphereMat('--cm-hit'), warn: sphereMat('--cm-warn'), ink: new THREE.LineBasicMaterial({ color: color('--cm-ink') }) }
+    g.shared = new Set([g.sphere, ...Object.values(g.mats)])
   }, [d, theme])
 
   // What changes with the controls: visibility, the arm, the selection.
@@ -379,26 +397,21 @@ export default function Viewer({ models }) {
     if (!g?.arm) return
     for (const [layer, group] of Object.entries(g.layers)) group.visible = shown(layer)
     g.pad.children.forEach(c => { c.visible = showPad && shown(c.userData.layer) })
-    g.arm.clear()
+    release(g.arm, g.shared)
+    g.tool.visible = showArm
     if (showArm) {
-      const cols = { arm: color('--cm-arm'), hit: color('--cm-hit'), warn: color('--cm-warn') }
       for (const sp of arm.spheres) {
-        const m = new THREE.Mesh(g.sphere, new THREE.MeshLambertMaterial({
-          color: cols[sphereColor(sp)], transparent: true, opacity: 0.55, depthWrite: false
-        }))
+        const m = new THREE.Mesh(g.sphere, g.mats[sphereColor(sp)])
         m.scale.setScalar(sp.r + (showPad ? model.sphere_buffer : 0))
         m.position.set(...sp.p)
         g.arm.add(m)
       }
       const pts = d.chain.filter(n => arm.T[n]).map(n => new THREE.Vector3(arm.T[n][0][3], arm.T[n][1][3], arm.T[n][2][3]))
-      g.arm.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: color('--cm-ink') })))
-      const tool = new THREE.AxesHelper(0.07)
+      g.arm.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), g.mats.ink))
       const T = arm.T[model.ee_link]
-      tool.matrixAutoUpdate = false
-      tool.matrix.set(...T[0], ...T[1], ...T[2], 0, 0, 0, 1)
-      g.arm.add(tool)
+      g.tool.matrix.set(...T[0], ...T[1], ...T[2], 0, 0, 0, 1)
     }
-    g.sel.clear()
+    release(g.sel)
     if (sel) {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...sel.d.map(v => v + 0.004))),
         new THREE.LineBasicMaterial({ color: color('--cm-accent') }))
@@ -447,7 +460,7 @@ export default function Viewer({ models }) {
     const drawn = d.boxes.filter(b => b.layer !== 'floor')
     const pts = drawn.flatMap(b => boxCorners(b))
     if (showArm) for (const sp of arm.spheres) for (const sg of [-1, 1]) pts.push(sp.p.map(v => v + sg * sp.r))
-    if (floorTop !== undefined) pts.push([pts[0][0], pts[0][1], floorTop])
+    if (floorTop !== undefined) pts.push([0, 0, floorTop])
     const box = aabb(pts)
     const lo = box.lo.map((v, i) => v - (i === 2 && floorTop !== undefined ? 0.03 : 0.06))
     const hi = box.hi.map(v => v + 0.06)
@@ -602,6 +615,7 @@ export default function Viewer({ models }) {
             <code>{model.dir}/</code>
           </span>
         </div>
+        {model.warnings.map(w => <p key={w} className={cx(s.wide, s.warning)}>⚠ {w}</p>)}
       </section>
 
       <section className={cx(s.panel, s.controls)} aria-label="View controls">
@@ -659,7 +673,7 @@ export default function Viewer({ models }) {
                   <input type="number" id={`cm-j${i}`} step="0.5" key={`${robotId}${deg}`} defaultValue={deg}
                     onBlur={e => setJoint(i, parseFloat(e.target.value))}
                     onKeyDown={e => { if (e.key === 'Enter') setJoint(i, parseFloat(e.currentTarget.value)) }} />
-                  <input type="range" min={(lo * DEGR).toFixed(1)} max={(hi * DEGR).toFixed(1)} step="0.5" value={deg}
+                  <input type="range" min={Math.ceil(lo * DEGR * 2) / 2} max={Math.floor(hi * DEGR * 2) / 2} step="0.5" value={deg}
                     aria-label={`${n} degrees`} onChange={e => setJoint(i, parseFloat(e.target.value))} />
                 </div>
               )
@@ -764,7 +778,7 @@ export default function Viewer({ models }) {
         <section className={s.panel} aria-label="Arm clearance">
           <h2>Arm clearance at this pose</h2>
           <p className={s.hint} style={{ margin: '4px 0 8px' }}>
-            The closest sphere–box pairs as the planner sees them (box padded {mm(model.world_padding)} mm
+            The closest sphere–box pairs among the layers shown, measured as the planner does (box padded {mm(model.world_padding)} mm
             {d.unpadded.length > 0 && <>, except {d.unpadded.join(', ')}</>}; sphere buffered {mm(model.sphere_buffer)} mm).
             Inside = the planner refuses this state. Under {mm(act)} mm = inside the collision activation distance, where the planner adds collision cost.
           </p>

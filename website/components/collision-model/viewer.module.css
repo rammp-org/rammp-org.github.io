@@ -52,6 +52,7 @@
 .hint { font-size: 12px; color: var(--cm-ink-2); }
 .panel { background: var(--cm-sheet); border: 1px solid var(--cm-rule); border-radius: 6px; padding: 14px 16px; min-width: 0; }
 .probe { display: none; }
+.warning { margin: 0; color: var(--cm-warn); font-weight: 500; }
 
 /* controls */
 .controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; }

@@ -144,6 +144,23 @@ test('a layer generated for more padding than configured is refused', async () =
   await assert.rejects(loadCollisionModel(repo, planner), /a\.yaml: was generated for world_padding 0\.02/)
 })
 
+test('a non-list no_pad_names is refused', async () => {
+  const { repo, write, planner } = await scratchRobot()
+  await write('planner.yaml', 'robot: robot.yaml\nworld: world.yaml\nplanner: {no_pad_names: pedestal}\n')
+  await assert.rejects(loadCollisionModel(repo, planner), /planner\.no_pad_names must be a list of box names/)
+})
+
+test('layers generated for another mount tilt are flagged', async () => {
+  const flatbot = await loadCollisionModel(FIXTURE, FLATBOT)
+  assert.deepEqual(flatbot.warnings, [])
+  const { repo, dir, write, planner } = await scratchRobot()
+  await write('planner.yaml', 'robot: robot.yaml\nworld: world.yaml\nlayers: [a.yaml]\n')
+  await write('a.yaml', LAYER('a', 'b', 'meta: {arm_base_joint: {rpy_deg: [0, 30, 0]}}\n'))
+  await writeFile(path.join(dir, 'mount.yaml'), 'rpy_deg: [0, 25, 0]\n')
+  const model = await loadCollisionModel(repo, planner)
+  assert.match(model.warnings[0], /a\.yaml was generated for the arm tilted rpy_deg \[0,30,0\], but .*mount\.yaml says \[0,25,0\]/)
+})
+
 test('a rotated obstacle keeps its rpy_deg, and distances follow the rotation', async () => {
   const { repo, write, planner } = await scratchRobot()
   await write('world.yaml', 'base_frame: arm_mount\nobstacles:\n' +
