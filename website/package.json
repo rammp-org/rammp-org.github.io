@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "compose": "node scripts/compose.mjs",
-    "dev": "npm run compose && next dev",
-    "build": "npm run compose && next build",
+    "collision-models": "node scripts/collision-models.mjs",
+    "dev": "npm run compose && npm run collision-models && next dev",
+    "build": "npm run compose && npm run collision-models && next build",
     "postbuild": "pagefind --site out --output-path out/_pagefind",
     "start": "npx serve out",
     "test": "node --test \"tests/**/*.test.mjs\"",
@@ -17,7 +18,8 @@
     "nextra": "^4.6.1",
     "nextra-theme-docs": "^4.6.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "0.186.0"
   },
   "devDependencies": {
     "pagefind": "^1.3.0",
