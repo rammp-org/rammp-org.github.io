@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadSources, assertSlugsAreMounted } from './sources.mjs'
 import { injectEditUrls } from './edit-url.mjs'
+import { rewriteLinksIn } from './rewrite-links.mjs'
 
 const websiteDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoRoot = path.dirname(websiteDir)
@@ -122,6 +123,7 @@ export async function compose() {
     }
 
     await copyDocs(docsDir, target, source.exclude)
+    await rewriteLinksIn(target, source.slug)
     await injectEditUrls(target, source)
     await copyAssets(sourceRepo, source, publicDir)
   }
