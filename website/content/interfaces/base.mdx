@@ -2,9 +2,210 @@
 title: Base
 ---
 
+import { Callout } from 'nextra/components'
+
 # Base
 
-Coming soon. `rammp_base_interfaces` does not exist yet. It will hold the
-types for commanding and observing the wheelchair base, and the base will run
-its own arbitration server speaking the
-[common protocol](/interfaces/common#arbitration).
+`rammp_base_interfaces`. Observing and commanding the wheelchair base: the MIB's
+status with the seat pose inside it, drive state requests, and velocity and pose
+setpoints. Five messages, no services or actions of its own. The base's
+arbitration uses the [common](/interfaces/common#arbitration) protocol, under the
+`/base` namespace.
+
+How to use them, start to finish, is on
+[Controlling the base](/controlling-the-base). This page is the types in
+`rammp-interfaces-ros2` v2.0.0.
+
+<Callout type="warning">
+  These `.msg` files **mirror the MIB's own structs** in
+  [rammp-rtps](https://github.com/rammp-org/rammp-rtps), field for field and in wire
+  order, and are not the source of truth. The MIB publishes and reads the structs as
+  raw RTPS under these ROS 2 type names, with no bridge, so a ROS 2 node matches them
+  only while the field order agrees. Never reorder, insert or retype a field; a change
+  starts in rammp-rtps.
+</Callout>
+
+## Where the MIB serves these
+
+| Topic | Type | Direction | QoS |
+| --- | --- | --- | --- |
+| `/rammp/mib/status` | `rammp_base_interfaces/MibStatus` | MIB → ROS 2 | best-effort, every 500 ms |
+| `/rammp/drive_command` | `rammp_base_interfaces/DriveCommand` | ROS 2 or joystick → MIB | best-effort, on change |
+| `/base/setpoint/twist` | `rammp_base_interfaces/TwistSetpoint` | ROS 2 → MIB | best-effort, latest wins |
+| `/base/control_status` | [`rammp_common_interfaces/ControlStatus`](/interfaces/common#controlstatus-msg) | MIB → ROS 2 | reliable, on change and every 1 s |
+| `/base/odom` | `nav_msgs/Odometry` | MIB → ROS 2 | reliable, 20 Hz |
+| `/tf` | `tf2_msgs/TFMessage` (`odom` → `base_link`) | MIB → ROS 2 | reliable, 20 Hz |
+| `/rammp/joystick/xy_twist` | [`rammp_peripheral_interfaces/XYTwist`](#the-joystick-xytwist) | joystick → anyone | best-effort, continuous |
+| `/estop` | [`rammp_common_interfaces/EStop`](/interfaces/common#estop-msg) | any ↔ MIB | best-effort, every 100 ms |
+
+| Service | Type |
+| --- | --- |
+| `/base/acquire_control` | [`rammp_common_interfaces/AcquireControl`](/interfaces/common#acquirecontrol-srv) |
+| `/base/release_control` | [`rammp_common_interfaces/ReleaseControl`](/interfaces/common#releasecontrol-srv) |
+| `/base/revoke_control` | [`rammp_common_interfaces/RevokeControl`](/interfaces/common#revokecontrol-srv) |
+
+`PoseSetpoint` has no topic yet: nothing on the MIB reads it. `SeatState` has no
+topic of its own: it arrives inside `MibStatus`. The services and the status topic
+are the [common arbitration protocol](/interfaces/common#arbitration); the token
+they hand out goes on every `TwistSetpoint`, which is the only tokened input the MIB
+has. `DriveCommand` and the joystick carry none.
+
+Every topic the MIB publishes or reads is best-effort, except odometry, `/tf` and
+`/base/control_status`, which are reliable. A reliable subscriber never matches a
+best-effort publisher, so match the QoS or you get silence.
+
+## `DriveCommand` (msg)
+
+Ask the MIB for a drive state. Any node may send it: the joystick sends `DISABLE`
+and `ENABLE` (and push assist), a ROS 2 node sends `AUTONOMOUS` and `SHARED`. Each
+command states the whole target, so the sender's idea of the current state does not
+matter. Carries no token: nothing a `DriveCommand` does moves the chair by itself.
+In `AUTONOMOUS` and `SHARED` the chair moves only on setpoints carrying the token
+from `/base/acquire_control`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `request` | `uint8` | One of `REQUEST_*` |
+| `profile` | `uint8` | One of `PROFILE_*`. Ignored by push assist. |
+| `push_assist` | `bool` | With `REQUEST_DISABLE`: an assistant drives from the push handle |
+
+| `request` | `push_assist` | MIB state asked for |
+| --- | --- | --- |
+| `REQUEST_DISABLE` (0) | `false` | `IDLE` |
+| `REQUEST_DISABLE` (0) | `true` | `PUSH_ASSIST` |
+| `REQUEST_ENABLE` (1) | any | `ENABLED`: the joystick drives |
+| `REQUEST_AUTONOMOUS` (2) | any | `AUTONOMOUS`: the token holder drives on `TwistSetpoint` |
+| `REQUEST_SHARED` (3) | any | `SHARED`: the token holder drives on `TwistSetpoint`, and the joystick does not interrupt |
+
+| `profile` | Meaning |
+| --- | --- |
+| `PROFILE_LOW` (0) | Reduced drive response |
+| `PROFILE_NORMAL` (1) | Standard drive response |
+| `PROFILE_HIGH` (2) | Increased drive response |
+
+The caps each profile applies are on
+[Controlling the base](/controlling-the-base#profiles).
+
+**The MIB decides.** It accepts `ENABLE` from `IDLE` and `ENABLED` (a profile change
+while driving), `AUTONOMOUS` and `SHARED` from `IDLE`, `ENABLED` and `PUSH_ASSIST`,
+and nothing from `INITIALIZING`, `ESTOP` or `ERROR`. `AUTONOMOUS`, `SHARED` and
+`PUSH_ASSIST` each have their own ways out, so `ENABLE` is refused there: leave
+first, then enable.
+
+**`MibStatus.system_state` is the answer.** Send the command on change. The link is
+best-effort, so repeat a request the MIB has not answered yet; once the status has
+shown the requested state, the request is done. A later change of state is the
+MIB's decision, not a lost packet, so ask again only on a new decision of your
+own.
+
+## `MibStatus` (msg)
+
+The MIB's status: operating state, the drive profile in force, seat pose, speed,
+clock and error text. Published every 500 ms, resent whether or not anything
+changed, so a subscriber that starts late catches up on the next tick.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `system_state` | `uint8` | One of `SYSTEM_STATE_*` |
+| `active_profile` | `uint8` | One of `PROFILE_*` (the same values as `DriveCommand`): what the last granted `DriveCommand.profile` asked for |
+| `current_seat_state` | `SeatState` | Where the seat is |
+| `error_message` | `string` | Human-readable; `"No error"` when none |
+| `epoch_s` | `int64` | The MIB's clock: Unix seconds. `0` means not known. |
+| `speed` | `float32` | Ground speed, m/s, unsigned |
+| `utc_offset_min` | `int16` | Minutes east of UTC, to turn `epoch_s` into local wall time |
+| `seq` | `uint8` | +1 per message, wraps. A gap is a dropped sample. |
+| `status_text` | `string` | Optional wording for the state label; `""` means use the state's name |
+| `error_footer` | `string` | What to do about `error_message` |
+
+| `system_state` | Meaning |
+| --- | --- |
+| `SYSTEM_STATE_INITIALIZING` (0) | Bringing up the board; not ready |
+| `SYSTEM_STATE_IDLE` (1) | Waiting for a `DriveCommand`. Seat control available, drive disabled. |
+| `SYSTEM_STATE_ENABLED` (2) | The joystick drives. Manual seat control disabled. |
+| `SYSTEM_STATE_ERROR` (3) | Bring-up or runtime fault; `error_message` says why |
+| `SYSTEM_STATE_AUTONOMOUS` (4) | The token holder drives on `TwistSetpoint`. A joystick touch ends it, to `IDLE`, as does releasing or revoking the token. |
+| `SYSTEM_STATE_SHARED` (5) | The token holder drives on `TwistSetpoint`. The joystick does not interrupt; releasing or revoking the token ends it, to `IDLE`. |
+| `SYSTEM_STATE_ESTOP` (6) | Emergency stop: drive cut and held. `IDLE` once the latch clears. |
+| `SYSTEM_STATE_PUSH_ASSIST` (7) | An assistant drives from the push handle. `DriveCommand.push_assist` enters and leaves it. |
+
+The request values in `DriveCommand` and the state values here are different
+enums with different numbers (`REQUEST_AUTONOMOUS` is 2, `SYSTEM_STATE_AUTONOMOUS`
+is 4). Compare each against its own message.
+
+## `SeatState` (msg)
+
+The seat's pose, as the MIB last measured it. Nested in `MibStatus`. Whole units.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `front_back_tilt` | `float32` | deg, front-to-back seat tilt |
+| `lateral_tilt` | `float32` | deg, side-to-side seat tilt |
+| `elevation` | `float32` | mm, seat elevation |
+| `translation` | `float32` | mm, seat translation |
+
+Seat commands are the joystick's own RTPS type and have no ROS 2 facing topic.
+
+## `TwistSetpoint` (msg)
+
+Target base velocity in the body frame, `base_link`
+([REP 103](https://www.ros.org/reps/rep-0103.html): x forward, y left, z up).
+Absolute, latest wins. Acted on only in `AUTONOMOUS` and `SHARED`, and only with the
+live token; the chair stops 300 ms after the last admitted one. A setpoint with any
+other token is dropped, counted in `ControlStatus.rejected_count`, and does not
+refresh that deadline.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `twist` | `geometry_msgs/Twist` | Planar: `linear.x` (m/s) and `angular.z` (rad/s, counter-clockwise) are used. `linear.y` is ignored too: the base cannot move sideways. |
+| `token` | `uint8[16]` | The one `/base/acquire_control` returned; checked on every message |
+
+Same shape as the arm's `TwistSetpoint` but a separate type, so the two can
+diverge; the frame and the meaningful components are specific to each subsystem.
+
+## `PoseSetpoint` (msg)
+
+Target base pose in the `odom` frame
+([REP 105](https://www.ros.org/reps/rep-0105.html)). Defined, not yet read by the
+MIB.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `pose` | `geometry_msgs/Pose` | Planar: `position.x`, `position.y` and yaw are commanded; `position.z`, roll and pitch are ignored |
+| `token` | `uint8[16]` | From `/base/acquire_control`; validates the sender, every message |
+
+## Related types outside this package
+
+### The joystick: `XYTwist`
+
+`rammp_peripheral_interfaces/XYTwist`, broadcast on `/rammp/joystick/xy_twist`. An
+input stream, not a command to any one resource: each consumer decides what the
+stick means for it. The MIB drives on it in `ENABLED`, and a ROS 2 node reads it to
+drive the arm, the base or something else in `SHARED`. Calibrated on the joystick:
+0 at rest, deadzones applied, x and y within the unit circle. Mirrors the
+rammp-rtps struct.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `x` | `float32` | -1..+1, + is right |
+| `y` | `float32` | -1..+1, + is forward |
+| `twist` | `float32` | -1..+1, + is clockwise. Always rotates in place. |
+| `buttons` | `uint32` | Pressed buttons, `BUTTONS_*` bits: `BUTTONS_NONE` (0), `BUTTONS_JOYSTICK` (1), the stick's button |
+
+Note the stick frame: `x` is positive to the right, and `twist` positive
+clockwise, the opposite sign of `angular.z` in a `TwistSetpoint`.
+
+### Odometry
+
+Standard types, so there is no `.msg` here: `nav_msgs/Odometry` on `/base/odom`
+(pose in `odom`, twist in `base_link`) and the `odom` → `base_link` transform on
+`/tf`, both at 20 Hz, reliable. See
+[Odometry](/controlling-the-base#odometry).
+
+### E-stop and arbitration
+
+`rammp_common_interfaces`: [`EStop`](/interfaces/common#estop-msg) on `/estop`,
+which the MIB owns the latch for, and the
+[arbitration protocol](/interfaces/common#arbitration) the base serves under
+`/base`. Engaging the e-stop latches the arbiter too: the grant is dropped,
+`ControlStatus.estopped` is true and acquires are refused until the latch clears,
+to no owner.

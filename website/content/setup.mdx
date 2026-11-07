@@ -192,7 +192,7 @@ Docker can see it, then that a base image can see the GPU:
 ```bash
 docker info | grep -i runtimes                              # lists nvidia
 docker run --rm --runtime nvidia --network host --ipc host \
-  ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6 \
+  ghcr.io/rammp-org/rammp-cuda:2.0.0-jp6 \
   python3 -c 'import torch; print(torch.cuda.is_available())'   # True
 ```
 
@@ -232,7 +232,7 @@ first, with `colcon` and `rosdep`, following
 
 ```bash
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone --branch v1.0.0 https://github.com/rammp-org/rammp-interfaces-ros2.git
+git clone --branch v2.0.0 https://github.com/rammp-org/rammp-interfaces-ros2.git
 cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y && colcon build
 ```
 

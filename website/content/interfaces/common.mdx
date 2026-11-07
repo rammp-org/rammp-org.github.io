@@ -6,25 +6,47 @@ title: Common
 
 `rammp_common_interfaces`. Two things no single subsystem owns: the
 emergency stop, and the arbitration protocol for taking control of a
-resource. Every arbitrated resource on the robot, the arm today and the base
-when it lands, runs its own arbitration server speaking this one protocol on
-its own namespace.
+resource. Every arbitrated resource on the robot runs its own arbitration
+server speaking this one protocol on its own namespace: the arm at the root,
+the base under `/base`.
 
 ## Emergency stop
 
 ### `EStop` (msg)
 
-Broadcast on `/estop`. Any node may publish it. Engaging is never age-checked;
-clearing is, so a stale message can never release a stop.
+Broadcast on `/estop`, best-effort, every 100 ms per node. Any node may publish
+it. Engaging is fail-safe: an `ENGAGED` from anyone is always acted on, never
+age- or sequence-checked. Only the clearer, the MIB, which owns the latch, can
+end a stop.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `header` | `std_msgs/Header` | An all-zero stamp means unstamped and is accepted |
-| `engaged` | `bool` | `true` engages the stop, `false` clears it |
-| `source` | `string` | Who published it, for the log |
+| `header` | `std_msgs/Header` | The stamp is for the log only, never for decisions |
+| `state` | `uint8` | `STATE_ENGAGED` (1) engages. `STATE_NOT_ENGAGED` (0) is a heartbeat, or a clear attempt. Any other value reads as engaged. |
+| `source` | `string` | Who published it (node name), for the log and the clear attempt |
 | `reason` | `string` | Free text, for the log |
+| `pub_seq` | `uint32` | This publisher's message number: +1 per message, wraps |
+| `clear_target` | `string` | Clear attempts only: whose engagement to clear. `""` otherwise. |
+| `clear_pub_seq` | `uint32` | Clear attempts only: the newest `pub_seq` the clearer had received from `clear_target` |
 
-It is not a `std_msgs/Bool` because the stamp is load-bearing.
+What a message means:
+
+| `state` | `clear_target` | Meaning | Who sends it |
+| --- | --- | --- | --- |
+| `ENGAGED` | any | Engage | Any node |
+| `NOT_ENGAGED` | `""` | Heartbeat: alive, not engaging. It never ends a stop. | Any node, every period |
+| `NOT_ENGAGED` | `<source>` | A clear attempt for that source's engagement | The clearer only |
+
+A plain `NOT_ENGAGED` is not a clear, or any node's heartbeat would end another
+node's stop. The stop is released only when a clear attempt succeeds: the
+target accepts it and answers `NOT_ENGAGED` with a newer `pub_seq`, within the
+timeout. A source the clearer watches that goes silent longer than the timeout
+counts as engaged.
+
+It is not a `std_msgs/Bool` because the protocol is load-bearing. The `.msg`
+mirrors the firmware's `rammp::EStop` in
+[rammp-rtps](https://github.com/rammp-org/rammp-rtps), where the rules and
+timings live. Subscribe best-effort, or a firmware publisher never matches.
 
 ## Arbitration
 
@@ -43,10 +65,16 @@ it.
 | | Field | Type | Meaning |
 | --- | --- | --- | --- |
 | Request | `owner_id` | `string` | Human-readable label. Mirrors `sender_id` on arbitrated goals. |
+| | `token` | `uint8[16]` | Optional pre-generated key, so one orchestrator key can cover several resources. All-zero, the default, means mint one. |
 | Response | `accepted` | `bool` | |
 | | `token` | `uint8[16]` | The capability. Put it on every command this resource arbitrates. |
 | | `generation` | `uint64` | |
 | | `message` | `string` | |
+
+A supplied key gives up what minting guarantees: every holder of the key is the
+owner at once, and a restart does not lock out a stale holder. Check that the
+returned token equals the one sent; a server that predates the field ignores
+it and mints.
 
 ### `ReleaseControl` (srv)
 
@@ -73,23 +101,25 @@ lease.
 
 ### `ControlStatus` (msg)
 
-Published on change, latched, so a client that starts late learns the
-current state immediately. One publisher per arbitrated resource.
+Published on change, so a client that starts late learns the current state
+at once: the arm latches it, the base resends it every second. One publisher per
+arbitrated resource.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `header` | `std_msgs/Header` | |
-| `arbitration_enabled` | `bool` | `false` means tokens are ignored. A launch-time parameter. |
+| `arbitration_enabled` | `bool` | `false` means tokens are ignored. A launch-time parameter on the arm, a build-time constant on the MIB, `true` on the chair. |
 | `estopped` | `bool` | Latched. Nothing is admitted while true. |
 | `owned` | `bool` | Whether anyone holds the resource |
 | `owner_id` | `string` | Empty if none |
 | `generation` | `uint64` | Bumps on every grant. A client compares it to detect that it was dispossessed. |
 | `rejected_count` | `uint64` | Commands refused since start |
 
-## Where the arm serves these
+## Where they are served
 
-The arm driver exposes them as `/estop`, `/control_status`,
-`/acquire_control`, `/release_control` and `/revoke_control`. QoS and rates
-are in the [arm interface reference](/kinova-gen3-ros2/interface). That
-reference still names the types under the driver's own
-`kinova_gen3_interfaces` package.
+| Resource | Status | Services | Notes |
+| --- | --- | --- | --- |
+| The arm | `/control_status` | `/acquire_control`, `/release_control`, `/revoke_control` | QoS and rates in the [arm interface reference](/kinova-gen3-ros2/interface) |
+| The base | `/base/control_status` | `/base/acquire_control`, `/base/release_control`, `/base/revoke_control` | The token goes on every `TwistSetpoint`, the base's only tokened command. A release or revoke during autonomy drops the base to `IDLE`. See [Taking the base](/controlling-the-base#taking-the-base-baseacquire_control). |
+
+Both subscribe to the one `/estop`. The MIB owns its latch.

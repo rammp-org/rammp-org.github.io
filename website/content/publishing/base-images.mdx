@@ -46,7 +46,7 @@ with `--runtime nvidia`. Without it, `torch.cuda.is_available()` is `False`.
 
 ## Tags
 
-Release tags are `<semver>-jp<N>`, for example `rammp-cuda:1.0.0-jp6`.
+Release tags are `<semver>-jp<N>`, for example `rammp-cuda:2.0.0-jp6`.
 
 | Part | Tracks | Changes when |
 | --- | --- | --- |
@@ -62,14 +62,14 @@ labels, not part of the tag:
 
 ```bash
 docker inspect --format '{{json .Config.Labels}}' \
-  ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+  ghcr.io/rammp-org/rammp-cuda:2.0.0-jp6
 ```
 
 ## Pull them
 
 ```bash
-docker pull ghcr.io/rammp-org/rammp-base:1.0.0-jp6
-docker pull ghcr.io/rammp-org/rammp-cuda:1.0.0-jp6
+docker pull ghcr.io/rammp-org/rammp-base:2.0.0-jp6
+docker pull ghcr.io/rammp-org/rammp-cuda:2.0.0-jp6
 ```
 
 The current pinned version is on
@@ -87,8 +87,8 @@ A contract or base setup change bumps `VERSION` in the Makefile, and someone
 pushes a `v*` tag:
 
 ```bash
-git tag v1.0.0-jp6
-git push origin v1.0.0-jp6
+git tag v2.0.0-jp6
+git push origin v2.0.0-jp6
 ```
 
 ### CI derives the version
