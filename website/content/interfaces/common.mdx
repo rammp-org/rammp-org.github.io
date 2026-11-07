@@ -14,10 +14,13 @@ the base under `/base`.
 
 ### `EStop` (msg)
 
-Broadcast on `/estop`, best-effort, every 100 ms per node. Any node may publish
-it. Engaging is fail-safe: an `ENGAGED` from anyone is always acted on, never
-age- or sequence-checked. Only the clearer, the MIB, which owns the latch, can
-end a stop.
+Broadcast on `/estop`, best-effort, every 100 ms per publisher. The protocol lets
+any node engage; on the chair the joystick's e-stop button is what does, the MIB
+owns the latch and is the only thing that can end a stop, and the arm driver reads
+the topic and obeys. A ROS 2 node reads it rather than publishing it; how to pick
+the latch's state out of the traffic is on
+[Controlling the base](/controlling-the-base#the-e-stop). Engaging is fail-safe: an
+`ENGAGED` from anyone is always acted on, never age- or sequence-checked.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

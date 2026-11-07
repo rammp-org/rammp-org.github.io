@@ -36,7 +36,7 @@ How to use them, start to finish, is on
 | `/base/odom` | `nav_msgs/Odometry` | MIB → ROS 2 | reliable, 20 Hz |
 | `/tf` | `tf2_msgs/TFMessage` (`odom` → `base_link`) | MIB → ROS 2 | reliable, 20 Hz |
 | `/rammp/joystick/xy_twist` | [`rammp_peripheral_interfaces/XYTwist`](#the-joystick-xytwist) | joystick → anyone | best-effort, continuous |
-| `/estop` | [`rammp_common_interfaces/EStop`](/interfaces/common#estop-msg) | any ↔ MIB | best-effort, every 100 ms |
+| `/estop` | [`rammp_common_interfaces/EStop`](/interfaces/common#estop-msg) | MIB and joystick → anyone | best-effort, every 100 ms per publisher |
 
 | Service | Type |
 | --- | --- |
@@ -204,7 +204,8 @@ Standard types, so there is no `.msg` here: `nav_msgs/Odometry` on `/base/odom`
 ### E-stop and arbitration
 
 `rammp_common_interfaces`: [`EStop`](/interfaces/common#estop-msg) on `/estop`,
-which the MIB owns the latch for, and the
+which the joystick engages and the MIB owns the latch for (a ROS 2 node only reads
+it; see [The e-stop](/controlling-the-base#the-e-stop)), and the
 [arbitration protocol](/interfaces/common#arbitration) the base serves under
 `/base`. Engaging the e-stop latches the arbiter too: the grant is dropped,
 `ControlStatus.estopped` is true and acquires are refused until the latch clears,

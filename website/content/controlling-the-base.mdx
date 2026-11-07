@@ -21,8 +21,7 @@ directly, with the types in `rammp_base_interfaces`.
 | Address | `192.168.4.1` on the chair's Ethernet. The MIB runs the DHCP server. |
 
 <Callout>
-  This page describes RAMMP-mib-fw `main` as of 2026-11-07, with the base's token
-  arbitration wired in.
+  Last updated 2026-11-07, against RAMMP-mib-fw `main`.
 </Callout>
 
 ## What you are talking to
@@ -58,7 +57,7 @@ the Jetson.
 | `/base/odom` | `nav_msgs/Odometry` | MIB → you | reliable | 20 Hz |
 | `/tf` | `tf2_msgs/TFMessage`, `odom` → `base_link` | MIB → you | reliable | 20 Hz |
 | `/base/control_status` | `rammp_common_interfaces/ControlStatus` | MIB → you | reliable | on change, and every 1 s |
-| `/estop` | `rammp_common_interfaces/EStop` | any ↔ MIB | best-effort | every 100 ms per node |
+| `/estop` | `rammp_common_interfaces/EStop` | MIB and joystick → anyone | best-effort | every 100 ms per publisher |
 
 | Service | Type | Who calls it |
 | --- | --- | --- |
@@ -94,28 +93,35 @@ below is a transition between these states.
 | `ESTOP` (6) | nobody | nothing; returns to `IDLE` on its own once the latch clears |
 | `PUSH_ASSIST` (7) | an assistant, from the push handle | `DISABLE`, `AUTONOMOUS`, `SHARED` |
 
+The joystick's side: `IDLE` is the hub, and the e-stop reaches `ESTOP` from every
+state.
+
 ```mermaid
 stateDiagram-v2
+  direction LR
   [*] --> IDLE
   IDLE --> ENABLED : joystick ENABLE
   ENABLED --> IDLE : joystick DISABLE
-  IDLE --> AUTONOMOUS : you AUTONOMOUS
-  ENABLED --> AUTONOMOUS : you AUTONOMOUS
-  IDLE --> SHARED : you SHARED
-  ENABLED --> SHARED : you SHARED
-  AUTONOMOUS --> IDLE : you DISABLE
-  AUTONOMOUS --> IDLE : joystick touched
-  AUTONOMOUS --> IDLE : token released or revoked
-  SHARED --> IDLE : you DISABLE
-  SHARED --> IDLE : token released or revoked
   IDLE --> PUSH_ASSIST : push assist
   PUSH_ASSIST --> IDLE : DISABLE, or handles silent
-  PUSH_ASSIST --> AUTONOMOUS : you AUTONOMOUS
-  AUTONOMOUS --> ESTOP : e-stop
-  SHARED --> ESTOP : e-stop
-  ENABLED --> ESTOP : e-stop
-  IDLE --> ESTOP : e-stop
+  IDLE --> ESTOP : e-stop (from every state)
   ESTOP --> IDLE : latch clears
+```
+
+Your side: you enter from any of the three states above, and every way out lands
+in `IDLE`.
+
+```mermaid
+stateDiagram-v2
+  direction TB
+  state "IDLE, ENABLED or PUSH_ASSIST" as Manual
+  Manual --> AUTONOMOUS : you AUTONOMOUS
+  Manual --> SHARED : you SHARED
+  AUTONOMOUS --> IDLE : you DISABLE
+  AUTONOMOUS --> IDLE : token released or revoked
+  AUTONOMOUS --> IDLE : joystick touched
+  SHARED --> IDLE : you DISABLE
+  SHARED --> IDLE : token released or revoked
 ```
 
 `ENABLED` is the joystick's state and only the joystick asks for it. Your node asks
@@ -311,7 +317,7 @@ the joystick, and you have to acquire and ask for autonomy again.
 | **You release the token.** `/base/release_control` with your token. One reliable call, no repeat. | `IDLE`, `owned: false` |
 | **An operator revokes the token.** `/base/revoke_control`, from a tool, with no token. | `IDLE`, `owned: false`, unasked |
 | **The user touches the joystick** (`AUTONOMOUS` only). Any deflection or button. | `IDLE`, `owned: false`, unasked. Do not re-request automatically. |
-| **The e-stop engages**, from any node or the hardware chain. | `ESTOP` with `estopped: true`, then `IDLE` with no owner once the latch clears, at the earliest 3 s later. `error_message` names the cause. |
+| **The user presses the e-stop** on the joystick. | `ESTOP` with `estopped: true`, then `IDLE` with no owner once the latch clears, at the earliest 3 s later. `error_message` names the cause. |
 | **A fault.** | `ERROR`. Not operational; `error_message` and `error_footer` say what to do. |
 
 Another node acquiring the base is **not** an exit, but it is the end of your
@@ -352,7 +358,7 @@ sequenceDiagram
   else the user wants the chair
     J->>M: XYTwist, stick deflected
     M-->>N: MibStatus system_state = IDLE, control_status owned = false
-    Note over N: stop publishing; do not re-request
+    Note over N: stop publishing, and do not re-request
   end
 ```
 
@@ -497,34 +503,94 @@ are the joystick's and are not on a ROS 2 facing topic today.
 
 ## Odometry
 
-The MIB integrates the drive wheels' encoders and publishes
-`nav_msgs/Odometry` on `/base/odom` at 20 Hz, reliable, with the pose in `odom` and
-the twist in `base_link` ([REP 105](https://www.ros.org/reps/rep-0105.html)). It also
-publishes the `odom` → `base_link` transform on `/tf`, because it is the only
-odometry source on the chair today. Once a filter on the Jetson owns that
-transform, the MIB's `/tf` publisher goes away: two publishers of one transform
-fight.
+The MIB integrates the drive wheels' encoders and publishes standard
+`nav_msgs/Odometry` on `/base/odom`, reliable, at 20 Hz, the rate the drive boards
+report at. The pose is in `odom` and the twist in `base_link`
+([REP 105](https://www.ros.org/reps/rep-0105.html)); units are REP 103, so x is
+forward, y left and yaw counter-clockwise from above. Subscribe reliable, as any
+navigation stack does by default.
 
-The wheels are 0.355 m in diameter, 0.6096 m apart. A planar base cannot observe
-z, roll or pitch, so those covariances are large; x, y and yaw are small.
+| Field | What the MIB fills in |
+| --- | --- |
+| `header.stamp` | When the wheel samples were taken, on the MIB's clock: Unix time once it has synced to the Jetson over NTP, otherwise time since boot. `MibStatus.epoch_s` says which. |
+| `header.frame_id` | `odom` |
+| `child_frame_id` | `base_link` |
+| `pose.pose.position.x`, `.y` | Metres in `odom`, dead-reckoned from the encoders since the MIB booted. A drive board rebooting does not jump the pose: the MIB re-anchors to the new wheel angle and keeps integrating. Drifts with distance, as wheel odometry does. |
+| `pose.pose.position.z` | `0` |
+| `pose.pose.orientation` | Yaw only: a quaternion about z, `x` = `y` = 0 |
+| `pose.covariance` | Diagonal: x 0.001, y 0.001, yaw 0.03; z, roll and pitch 1e6, since a planar base cannot observe them |
+| `twist.twist.linear.x` | Measured forward speed, m/s, signed; negative when backing up. Compare `MibStatus.speed`, which is commanded and unsigned. |
+| `twist.twist.angular.z` | Measured yaw rate, rad/s, positive counter-clockwise |
+| `twist.twist`, other components | `0` |
+| `twist.covariance` | The same diagonal as the pose |
+
+The MIB also publishes the `odom` → `base_link` transform on `/tf`
+(`tf2_msgs/TFMessage`, reliable, 20 Hz), one `TransformStamped` per message with
+the same stamp and pose:
+
+| Field | Value |
+| --- | --- |
+| `header.stamp`, `header.frame_id` | As in the odometry message above: the sample time, `odom` |
+| `child_frame_id` | `base_link` |
+| `transform.translation` | `pose.pose.position` from the same odometry sample |
+| `transform.rotation` | `pose.pose.orientation` from the same odometry sample |
+
+The MIB publishes `/tf` because it is the only odometry source on the chair today.
+Once a filter on the Jetson owns that transform, the MIB's `/tf` publisher goes
+away: two publishers of one transform fight.
+
+Both topics go quiet, rather than repeating stale values, when the drive boards
+stop reporting, so a silent `/base/odom` means the boards are down, not that the
+chair is still. The geometry behind the integration is a wheel diameter of 0.355 m
+on a 0.6096 m track; there is no slip compensation.
 
 ## The e-stop
 
-The MIB owns the robot-wide e-stop latch. Any node, yours included, may engage it
-by publishing `rammp_common_interfaces/EStop` with `state: STATE_ENGAGED` on
-`/estop`; the chair stops at once and the MIB goes to `ESTOP`. Only the MIB clears
-the latch, through its handshake with every engaged source, and it returns to
-`IDLE` by itself when that succeeds. Your `TwistSetpoint` is ignored throughout.
-The e-stop also latches the arbiter: `control_status` shows `estopped: true`, the
-grant is dropped, and an acquire is refused until the latch clears, to no owner.
-Acquire again afterwards.
+The robot-wide e-stop is the chair's, not yours. The joystick's e-stop button
+engages it, the MIB owns the latch and is the only thing that clears it, and the
+arm driver reads `/estop` and stops the arm while it is engaged. Your node does not
+take part: it does not engage the stop and cannot clear it. What you see is the
+MIB's side of it: `MibStatus.system_state` goes to `ESTOP`, your setpoints are
+ignored, `control_status` shows `estopped: true` with the grant dropped, and an
+acquire is refused. When the latch clears the MIB returns to `IDLE` on its own with
+no owner, and you acquire again.
 
-A node that engages must keep publishing `ENGAGED`, every 100 ms, until it accepts
-the MIB's clear attempt; a plain `NOT_ENGAGED` from it is a heartbeat, not a clear.
-The full rules, including the heartbeat and deadman, are in the comments of the
-`EStop` type and in the
-[arm's description of the e-stop](/kinova-gen3-ros2/interface#the-e-stop), which
-obeys the same protocol.
+If you want to know the robot is stopped before the next `MibStatus` tick, or
+whether the arm is stopped too, read `/estop` itself. Every participant publishes
+on it, each every 100 ms, so most of the traffic is not the answer:
+
+| Field | What to require |
+| --- | --- |
+| `source` | `"mib"`: the latch's own messages. The joystick's (`"hmi"`) say whether its button is held, not whether the robot is stopped. |
+| `clear_target` | `""`. A message with it set is a clear attempt addressed to one source; the stop still holds while it is out. |
+| `state` | `STATE_ENGAGED` (1): stopped. `STATE_NOT_ENGAGED` (0): clear. Treat any other value as engaged. |
+
+With those three, `state` is the latch, and `reason` is the cause while it is
+engaged. The MIB's messages are best-effort and arrive ten times a second; if they
+stop arriving for more than a few periods, treat the robot as stopped, which is
+the rule the MIB applies to the sources it watches.
+
+```sh
+ros2 topic echo --qos-reliability best_effort /estop \
+  --filter "m.source == 'mib' and m.clear_target == ''" --field state
+```
+
+```python
+from rammp_common_interfaces.msg import EStop
+
+def on_estop(msg: EStop):
+    if msg.source != "mib" or msg.clear_target != "":
+        return  # another publisher, or a clear attempt: not the latch's state
+    stopped = msg.state != EStop.STATE_NOT_ENGAGED
+    ...
+
+node.create_subscription(EStop, "/estop", on_estop, BEST_EFFORT)
+```
+
+The full protocol, including why a plain `NOT_ENGAGED` is not a clear and how the
+MIB's clear handshake works, is on the
+[Common interfaces](/interfaces/common#emergency-stop) page and in the
+[arm's description of the e-stop](/kinova-gen3-ros2/interface#the-e-stop).
 
 ## Reaching the MIB from ROS 2
 
