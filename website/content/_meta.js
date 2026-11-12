@@ -22,5 +22,9 @@ export default {
   'controlling-the-base': 'Controlling the base',
   'oak-d-pro-poe': 'OAK-D Pro PoE camera',
   'robotiq-2f-85': 'Robotiq 2F-85 gripper',
+  'collision-model': {
+    title: 'Motion planning: collision model',
+    theme: { layout: 'full', toc: false }
+  },
   contributing: { display: 'hidden' }
 }
