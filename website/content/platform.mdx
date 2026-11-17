@@ -161,7 +161,7 @@ base_link (chair)
   `odom` → `base_link` on `/tf`; `world.yaml` publishes `world` → `odom`
   (identity) and `base_link` → `arm_mount`, `[0.1936, 1.5723, 1.0730]` with no
   rotation. That offset is solved from the scene camera's position in
-  `base_link`, `[0.5, 1.0, 1.5]`, and its calibration below.
+  `base_link`, `[0.5, 1.0, 1.5]`, and its 2026-11-12 calibration.
 
 ### Where each transform comes from
 
@@ -199,5 +199,5 @@ flatbot camera mounts:
 
 | Child | Parent | xyz (m) | Rotation |
 | --- | --- | --- | --- |
-| `scene_camera` | `arm_mount` | `[0.3064, -0.5723, 0.4270]` | Facing +X, pitched about 7° down (quat_xyzw `[-0.0067, 0.0607, -0.0113, 0.9981]`), mounted upside down (180° roll). ChArUco calibration with the wrist camera, 2026-11-12: 5 captures, 5 mm / 0.3° spread |
+| `scene_camera` | `arm_mount` | `[0.294939, -0.609435, 0.387293]` | Facing +X, turned about 15° left and pitched about 10° down (quat_xyzw `[0.0221559, 0.0888378, 0.1293172, 0.9873672]`), mounted upside down (180° roll). Refitted 2026-11-17 after the camera was turned on its mount, from three box-opening runs against the wrist camera; not a calibration session |
 | `wrist_camera` | `arm_end_effector_link` | `[0.0, 0.065, 0.015]` | Looking along the tool (+Z), mounted upside down: its +Z points back at the arm (−Y). Checked against a live image. Position fitted from one depth-press run on 2026-10-22, not calibrated; x not observable, kept 0 |
