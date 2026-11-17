@@ -155,9 +155,11 @@ base_link (chair)
 - **Arm frames** use an `arm_` prefix; the chair owns `base_link`.
 - **Camera frames** root each driver's own tree: `<camera>` for an OAK (the
   colour sensor, body axes), `<camera>_link` for a Gemini or RealSense.
-- **`base_link` → `arm_mount`** is not published until a chair URDF owns the
-  chair's fixed geometry. flatbot has no chair, so its `transforms/world.yaml`
-  roots the tree at `world` instead: `world` → `arm_mount`, identity.
+- **`base_link` → `arm_mount`** belongs to a chair URDF once one owns the
+  chair's fixed geometry. Until then flatbot's `transforms/world.yaml` makes one
+  tree, `world` → `odom` → `base_link` → `arm_mount`: it publishes `world` →
+  `odom` and `base_link` → `arm_mount`, both identity, and the base (MIB)
+  publishes `odom` → `base_link` on `/tf`.
 
 ### Where each transform comes from
 
@@ -191,9 +193,9 @@ rpy_deg: [0.0, 30.0, 0.0] # new_adapter_plate_v3: 30° forward lean
 | `flatbot` | `snorlax` | Mobile test platform with the Gen 1.5 arm mount and electronics | 30° plate | OAK-D Pro W PoE | OAK-D Pro PoE |
 | `dojo` | `abra` | Bench arm cell | Level | Orbbec Gemini 336L | RealSense D405 |
 
-flatbot camera mounts (hand-measured, not calibrated):
+flatbot camera mounts (not calibrated):
 
 | Child | Parent | xyz (m) | Rotation |
 | --- | --- | --- | --- |
-| `scene_camera` | `arm_mount` | `[0.20, -0.50, 0.40]` | Facing +X, mounted upside down (180° roll) |
-| `wrist_camera` | `arm_end_effector_link` | `[0.0, 0.10, -0.10]` | Looking along the tool (+Z), mounted upside down: its +Z points back at the arm (−Y). Checked against a live image |
+| `scene_camera` | `arm_mount` | `[-0.0032, -0.50, 0.40]` | Facing +X, mounted upside down (180° roll). Hand-measured at x 0.20, then 0.2032 m (8 in) less when the arm moved forward on 2026-11-07 |
+| `wrist_camera` | `arm_end_effector_link` | `[0.0, 0.065, 0.015]` | Looking along the tool (+Z), mounted upside down: its +Z points back at the arm (−Y). Checked against a live image. Position fitted from one depth-press run on 2026-10-22; x not observable, kept 0 |
